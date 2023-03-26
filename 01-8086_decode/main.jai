@@ -14,7 +14,7 @@ Memory_Mode :: enum {
     REGISTER    :: 0b11;
 }
 Memory :: union {
-    expr: struct {
+    struct {
         base1: Register;
         base2: Register;
         disp: u16;
@@ -88,14 +88,14 @@ register_name_table :: string.[
     "bh", "di", // 0b111w
 ];
 effective_address_table :: Memory.[
-    .{ expr.base1 = "bx", expr.base2 = "si", },
-    .{ expr.base1 = "bx", expr.base2 = "di", },
-    .{ expr.base1 = "bp", expr.base2 = "si", },
-    .{ expr.base1 = "bp", expr.base2 = "di", },
-    .{ expr.base1 = "si", },
-    .{ expr.base1 = "di", },
-    .{ expr.base1 = "bp", },
-    .{ expr.base1 = "bx", },
+    .{ base1 = "bx", base2 = "si", },
+    .{ base1 = "bx", base2 = "di", },
+    .{ base1 = "bp", base2 = "si", },
+    .{ base1 = "bp", base2 = "di", },
+    .{ base1 = "si", },
+    .{ base1 = "di", },
+    .{ base1 = "bp", },
+    .{ base1 = "bx", },
 ];
 register :: (reg: u8, word: u8) -> Register {
     assert(word <= 1);
@@ -132,12 +132,12 @@ operand_to_string :: (operand: Operand) -> string {
             builder: String_Builder;
             builder.allocator = temporary_allocator;
 
-            expr := *operand.mem.expr;
-            print_to_builder(*builder, "[%", expr.base1);
-            if expr.base2.count
-                print_to_builder(*builder, " + %", expr.base2);
-            if expr.disp
-                print_to_builder(*builder, " + %", expr.disp);
+            mem := *operand.mem;
+            print_to_builder(*builder, "[%", mem.base1);
+            if mem.base2.count
+                print_to_builder(*builder, " + %", mem.base2);
+            if mem.disp
+                print_to_builder(*builder, " + %", mem.disp);
             append(*builder, "]");
 
             return builder_to_string(*builder);
@@ -173,7 +173,7 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
         if (inst.mode != .MEM_NO_DISP) {
             field_low  := <<(head + 2);
             field_high := <<(head + 3);
-            rm.mem.expr.disp = immediate(field_low, ifx inst.mode == .MEM_DISP_16 then field_high else 0);
+            rm.mem.disp = immediate(field_low, ifx inst.mode == .MEM_DISP_16 then field_high else 0);
         }
 
         if (field_rm == 0b110 && inst.mode == .MEM_NO_DISP) {
