@@ -4,60 +4,78 @@
 #load "file.jai";
 
 DEBUG :: true;
+USE_TABLE_DISPATCH :: false;
 
+Register :: string;
 Memory_Mode :: enum {
     MEM_NO_DISP :: 0b00;
     MEM_DISP_8  :: 0b01;
     MEM_DISP_16 :: 0b10;
     REGISTER    :: 0b11;
 }
+Memory :: union {
+    expr: struct {
+        base1: Register;
+        base2: Register;
+        disp: u16;
+    };
+    direct: u16;
+}
+Operand_Type :: enum {
+    REGISTER;
+    MEMORY;
+    IMMEDIATE;
+}
+Operand :: struct {
+    type: Operand_Type;
+    union {
+        reg: Register;
+        mem: Memory;
+        imm: u16;
+    };
+}
 
 Instruction_Type :: enum {
     INVALID :: 0;
     MOV     :: 1;
 }
-
-Register :: string;
-Memory :: u64;
-Operand :: union {
-    reg: Register;
-    mem: Memory;
-    imm: u16;
-}
-
 Instruction :: struct {
     type:     Instruction_Type;
 
     // TODO(ryan): maybe store *Opcode_Info for indirection instead?
-    mnemonic: string; // asm identifier
-    desc:     string; // XXX DEBUG only
+    mnemonic: string;
+    desc:     string;
 
     mode:     Memory_Mode;
     src:      Operand;
     dst:      Operand;
 }
 
-Decode_Proc :: #type (opcode: u8, op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32);
+Decode_Proc :: #type (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32);
 Opcode_Info :: struct {
     decode:   Decode_Proc;
     mnemonic: string;
     desc:     string;
 }
-opcode_table: [1]Opcode_Info = .[
-    .{ decode_mov, "mov", "move register/memory to/from register" },
-];
+
+#if USE_TABLE_DISPATCH {
+// NOTE(ryan): jai only supports indexed sparse initialization of arrays *inside structs* for now.
+Opcode_Table :: struct {
+    ops: [64]Opcode_Info;
+    ops[34] = .{ decode_mov, "mov", "move register/memory to/from register" };
+}
+opcode_table: Opcode_Table;
+}
+
+formatHex :: #bake_arguments formatInt(base=16);
 
 memory_mode :: inline (mod: u8) -> Memory_Mode {
     assert(!(mod & ~0x03));
     return cast(Memory_Mode)mod;
 }
 
-register :: inline (name: string) -> Operand {
-    return Operand.{reg = name};
-}
-
 // NOTE(ryan): directly indexed by "(reg << 1) | field_w".
-register_names :: string.[
+register_name_table :: string.[
                 //   reg  : register encoding
                 //      w : width (0: byte, 1: word)
     "al", "ax", // 0b000w
@@ -69,54 +87,165 @@ register_names :: string.[
     "dh", "si", // 0b110w
     "bh", "di", // 0b111w
 ];
-register :: (reg: u8, word: u8) -> Operand {
+effective_address_table :: Memory.[
+    .{ expr.base1 = "bx", expr.base2 = "si", },
+    .{ expr.base1 = "bx", expr.base2 = "di", },
+    .{ expr.base1 = "bp", expr.base2 = "si", },
+    .{ expr.base1 = "bp", expr.base2 = "di", },
+    .{ expr.base1 = "si", },
+    .{ expr.base1 = "di", },
+    .{ expr.base1 = "bp", },
+    .{ expr.base1 = "bx", },
+];
+register :: (reg: u8, word: u8) -> Register {
     assert(word <= 1);
     index := (reg << 1) | word;
-    assert(index < register_names.count);
+    assert(index < register_name_table.count);
 
-    name := register_names[index];
-    return register(name);
+    return register_name_table[index];
+}
+operand_register :: inline (reg: u8, word: u8) -> Operand {
+    return Operand.{ type = .REGISTER, reg = register(reg, word) };
+}
+operand_register :: inline (name: string) -> Operand {
+    return Operand.{ type = .REGISTER, reg = name };
+}
+operand_memory :: inline (mem: Memory) -> Operand {
+    return Operand.{ type = .MEMORY, mem = mem };
+}
+immediate :: inline (low: u8, high: u8 = 0) -> u16 {
+    return ((cast(u16)high) << 8) | cast(u16)low;
+}
+operand_immediate :: inline (low: u8, high: u8 = 0) -> Operand {
+    return Operand.{ type = .IMMEDIATE, imm = immediate(low, high) };
 }
 
-decode_mov :: (opcode: u8, op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
-    assert(opcode == 0b100010, "unsupported move opcode");
+operand_to_string :: (operand: Operand) -> string {
+    if #complete operand.type == {
+        case .REGISTER;
+            return operand.reg;
+        case .IMMEDIATE;
+            return tprint("%", operand.imm);
+        case .MEMORY; {
+            assert(operand.type == .MEMORY);
 
-    field_d   := (<< head      & 0b0000_0010) >> 1; // 1 if "reg" is destination
-    field_w   := (<< head      & 0b0000_0001);      // 0: byte, 1: word
-    field_mod := (<<(head + 1) & 0b1100_0000) >> 6; // see Memory_Mode
+            builder: String_Builder;
+            builder.allocator = temporary_allocator;
+
+            expr := *operand.mem.expr;
+            print_to_builder(*builder, "[%", expr.base1);
+            if expr.base2.count
+                print_to_builder(*builder, " + %", expr.base2);
+            if expr.disp
+                print_to_builder(*builder, " + %", expr.disp);
+            append(*builder, "]");
+
+            return builder_to_string(*builder);
+        }
+    }
+};
+
+decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    inst: Instruction;
+    inst.type = .MOV;
+
+    field_d   := (<< head      & 0b0000_0010) >> 1;
+    field_w   := (<< head      & 0b0000_0001);
+    field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
     field_reg := (<<(head + 1) & 0b0011_1000) >> 3;
     field_rm  := (<<(head + 1) & 0b0000_0111);
 
-    reg     := register(field_reg, field_w);
-    reg_mem := register(field_rm, field_w);
+    reg := operand_register(field_reg, field_w);
 
-    inst: Instruction;
-    inst.type     = .MOV;
-    inst.mnemonic = op_info.mnemonic;
-    inst.desc     = op_info.desc;
-    inst.mode     = memory_mode(field_mod);
-    inst.src      = ifx field_d then reg_mem else reg;
-    inst.dst      = ifx field_d then reg     else reg_mem;
+    inst.mode = memory_mode(field_mod);
+    if (inst.mode == .REGISTER) {
+        rm := operand_register(field_rm, field_w);
+        inst.src  = ifx field_d then rm  else reg;
+        inst.dst  = ifx field_d then reg else rm;
 
-    if DEBUG {
-        print("% %, %  :: {d=% w=% mod=% reg=% rm=%}",
-            op_info.mnemonic, inst.dst.reg, inst.src.reg,
-            field_d, field_w, field_mod, field_reg, field_rm);
-        if op_info.desc.count
-            print("  (%)", op_info.desc);
-        print("\n");
+        if DEBUG {
+            print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
+                op_info.mnemonic, inst.dst.reg, inst.src.reg,
+                formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
+        }
+    } else {
+        rm := operand_memory(effective_address_table[field_rm]);
+        if (inst.mode != .MEM_NO_DISP) {
+            field_low  := <<(head + 2);
+            field_high := <<(head + 3);
+            rm.mem.expr.disp = immediate(field_low, ifx inst.mode == .MEM_DISP_16 then field_high else 0);
+        }
+
+        if (field_rm == 0b110 && inst.mode == .MEM_NO_DISP) {
+            assert(false); // XXX handle DIRECT ADDR case
+        }
+
+        inst.src  = ifx field_d then rm  else reg;
+        inst.dst  = ifx field_d then reg else rm;
+
+        if DEBUG {
+            print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
+            op_info.mnemonic,
+            operand_to_string(inst.dst),
+            operand_to_string(inst.src),
+            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
+        }
     }
 
-    return inst, 2;
+    advance_counts :: s32.[2, 3, 4, 2];
+    assert(field_mod < advance_counts.count);
+    advance_count := advance_counts[field_mod];
+
+    return inst, advance_count;
+}
+
+decode_mov_imm_to_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    inst: Instruction;
+    inst.type = .MOV;
+
+    field_w    := (<< head       & 0b0000_1000) >> 3;
+    field_reg  :=  << head       & 0b0000_0111;
+    field_low  :=  <<(head + 1);
+    field_high :=  ifx field_w then <<(head + 2) else 0;
+
+    inst.dst = operand_register(field_reg, field_w);
+    inst.src = operand_immediate(field_low, field_high);
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, w=% reg=%, low=%, high=%} (%)\n",
+            op_info.mnemonic, inst.dst.reg, inst.src.imm,
+            formatHex(<<head), field_w, field_reg, field_low, field_high, op_info.desc);
+    }
+
+    advance_count := cast(s32)(ifx field_w then 3 else 2);
+    return inst, advance_count;
 }
 
 decode :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
-    opcode := (0b1111_1100 & (<<head)) >> 2;
+    opcode_equals :: inline (test: u8, mask: u8, opcode: u8) -> bool {
+        assert(!(opcode & ~mask));
+        return (test & mask) == opcode;
+    }
 
-    // HACK(ryan): replace with direct indexing by opcode.
-    op_info := *opcode_table[opcode - 0b100010];
+    op_info: Opcode_Info;
+    #if USE_TABLE_DISPATCH {
+        opcode := (0b1111_1100 & (<<head));
+        assert(opcode < opcode_table.ops.count);
+        op_info := opcode_table.ops[opcode];
+    } else {
+        if opcode_equals(<<head, 0b1111_1100, 0b1000_1000) {
+            op_info = .{decode_mov, "mov", "move register/memory to/from register"};
+        } else if opcode_equals(<<head, 0b1111_0000, 0b1011_0000) {
+            op_info = .{decode_mov_imm_to_reg, "mov", "move immediate to register"};
+        }
+    }
 
-    inst, advance_count := op_info.decode(opcode, op_info, head);
+    if !op_info.decode
+        assert(false, "Unknown opcode for first byte: 0x%", formatHex(<<head));
+
+    inst, advance_count := op_info.decode(*op_info, head);
+    inst.mnemonic = op_info.mnemonic;
+    inst.desc = op_info.desc;
     return inst, advance_count;
 }
 
@@ -128,7 +257,7 @@ disassemble :: (bytes: []u8) {
         head := bytes.data + offset;
         inst, advance := decode(offset, head);
 
-        print_to_builder(*builder, "% %, %\n", inst.mnemonic, inst.dst.reg, inst.src.reg);
+        print_to_builder(*builder, "% %, %\n", inst.mnemonic, operand_to_string(inst.dst), operand_to_string(inst.src));
         offset += advance;
     }
 
@@ -144,7 +273,10 @@ disassemble :: (bytes: []u8) {
 
 main :: () {
     // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0037_single_register_mov";
-    f := "../cmuratori-computer_enhance/perfaware/part1/listing_0038_many_register_mov";
+    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0038_many_register_mov";
+    f := "../cmuratori-computer_enhance/perfaware/part1/listing_0039_more_movs";
+    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs";
+
     bytes := file_read_all_as_bytes(f);
     disassemble(bytes);
 }
