@@ -21,6 +21,15 @@ Memory :: union {
     };
     direct: u16;
 }
+Immediate_Type :: enum {
+    IMPLICIT;
+    BYTE;
+    WORD;
+}
+Immediate :: struct {
+    type: Immediate_Type;
+    val: u16;
+}
 Operand_Type :: enum {
     REGISTER;
     MEMORY;
@@ -31,7 +40,7 @@ Operand :: struct {
     union {
         reg: Register;
         mem: Memory;
-        imm: u16;
+        imm: Immediate;
     };
 }
 
@@ -116,8 +125,8 @@ operand_memory :: inline (mem: Memory) -> Operand {
 immediate :: inline (low: u8, high: u8 = 0) -> u16 {
     return ((cast(u16)high) << 8) | cast(u16)low;
 }
-operand_immediate :: inline (low: u8, high: u8 = 0) -> Operand {
-    return Operand.{ type = .IMMEDIATE, imm = immediate(low, high) };
+operand_immediate :: inline (low: u8, high: u8 = 0, type: Immediate_Type = .IMPLICIT) -> Operand {
+    return Operand.{ type = .IMMEDIATE, imm = Immediate.{ type = type, val = immediate(low, high) }};
 }
 
 operand_to_string :: (inst: Instruction, operand: Operand) -> string {
@@ -126,12 +135,15 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
         case .REGISTER;
             return operand.reg;
         case .IMMEDIATE;
-            return tprint("%", operand.imm);
+            explicit_size := "";
+            if operand.imm.type      == .BYTE  explicit_size = "byte ";
+            else if operand.imm.type == .WORD  explicit_size = "word ";
+            return tprint("%0%0", explicit_size, operand.imm.val);
         case .MEMORY; {
             mem := *operand.mem;
 
             // XXX(ryan): refer by register enum, instead of string
-            direct_addressing := inst.mode == .MEM_NO_DISP && mem.base1 == "bp";
+            direct_addressing := inst.mode == .MEM_NO_DISP && mem.base1 == "bp" && mem.base2 == "";
 
             if (direct_addressing) {
                 return tprint("[%]", mem.disp);
@@ -193,6 +205,7 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
         }
 
         if (field_rm == 0b110 && inst.mode == .MEM_NO_DISP) {
+            // DIRECT ADDRESSING (only disp is used in address expression)
             field_low  := <<(head + 2);
             field_high := <<(head + 3);
             rm.mem.disp = immediate(field_low, field_high);
@@ -232,12 +245,54 @@ decode_mov_imm_to_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adv
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, w=% reg=%, low=%, high=%} (%)\n",
-            op_info.mnemonic, inst.dst.reg, inst.src.imm,
+            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_w, field_reg, field_low, field_high, op_info.desc);
     }
 
     advance_count := cast(s32)(ifx field_w then 3 else 2);
     return inst, advance_count;
+}
+
+decode_mov_imm_to_reg_mem :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_w := <<head & 0b0000_0001;
+    field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_rm  := (<<(head + 1) & 0b0000_0111);
+
+    inst: Instruction;
+    inst.type = .MOV;
+    inst.mode = memory_mode(field_mod);
+    inst.dst = operand_memory(effective_address_table[field_rm]);
+
+    offset: s32 = 2;
+    if inst.mode == .MEM_DISP_8 {
+        field_low := <<(head + offset);
+        inst.dst.mem.disp = immediate(field_low, 0);
+        offset += 1;
+    } else if inst.mode == .MEM_DISP_16 {
+        field_low  := <<(head + offset);
+        field_high := <<(head + offset + 1);
+        inst.dst.mem.disp = immediate(field_low, field_high);
+        offset += 2;
+    }
+
+    if (!field_w) {
+        field_low := <<(head + offset);
+        inst.src = operand_immediate(field_low, 0, .BYTE);
+        offset += 1;
+    } else {
+        field_low  := <<(head + offset);
+        field_high := <<(head + offset + 1);
+        inst.src = operand_immediate(field_low, field_high, .WORD);
+        offset += 2;
+    }
+
+    if DEBUG {
+        print("% %, % ; {first_byte=0x%, w=%} (%)\n",
+        op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+        formatHex(<<head), field_w, op_info.desc);
+    }
+
+    return inst, offset;
 }
 
 decode :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
@@ -256,6 +311,8 @@ decode :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
             op_info = .{decode_mov, "mov", "move register/memory to/from register"};
         } else if opcode_equals(<<head, 0b1111_0000, 0b1011_0000) {
             op_info = .{decode_mov_imm_to_reg, "mov", "move immediate to register"};
+        } else if opcode_equals(<<head, 0b1111_1110, 0b1100_0110) {
+            op_info = .{decode_mov_imm_to_reg_mem, "mov", "move immediate to register/memory"};
         }
     }
 
