@@ -136,6 +136,17 @@ operand_register :: inline (name: string) -> Operand {
 operand_memory :: inline (mem: Memory) -> Operand {
     return Operand.{ type = .MEMORY, mem = mem };
 }
+operand_memory :: inline (field_rm: u8, disp: u16) -> Operand {
+    assert(field_rm < effective_address_table.count);
+    operand: Operand;
+    operand.type = .MEMORY;
+    operand.mem = effective_address_table[field_rm];
+    operand.mem.disp = disp;
+    return operand;
+}
+operand_memory_direct :: inline (addr: u16) -> Operand {
+    return Operand.{ type = .MEMORY, mem = Memory.{ direct = addr } };
+}
 immediate :: inline (low: u8, high: u8 = 0) -> u16 {
     return ((cast(u16)high) << 8) | cast(u16)low;
 }
@@ -203,11 +214,11 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
 
         if DEBUG {
             print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-                op_info.mnemonic, inst.dst.reg, inst.src.reg,
+                op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
                 formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
         }
     } else {
-        rm := operand_memory(effective_address_table[field_rm]);
+        rm := operand_memory(field_rm, 0);
 
         if (inst.mode != .MEM_NO_DISP) {
             field_low  := <<(head + 2);
@@ -220,12 +231,11 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
             field_low  := <<(head + 2);
             field_high := <<(head + 3);
             inst.mode = .MEM_DIRECT;
-            rm.mem.direct = immediate(field_low, field_high);
+            rm = operand_memory_direct(immediate(field_low, field_high));
             advance_count = 4;
         } else {
-            advance_counts :: s32.[2, 3, 4];
-            assert(field_mod < advance_counts.count);
-            advance_count = advance_counts[field_mod];
+            assert(field_mod < 3);
+            advance_count = field_mod + 2;
         }
 
         inst.src  = ifx field_d then rm  else reg;
@@ -276,16 +286,18 @@ decode_mov_imm_to_reg_mem :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     inst.dst = operand_memory(effective_address_table[field_rm]);
 
     offset: s32 = 2;
+    disp: u16;
     if inst.mode == .MEM_DISP_8 {
         field_low := <<(head + offset);
-        inst.dst.mem.disp = immediate(field_low, 0);
+        disp = immediate(field_low, 0);
         offset += 1;
     } else if inst.mode == .MEM_DISP_16 {
         field_low  := <<(head + offset);
         field_high := <<(head + offset + 1);
-        inst.dst.mem.disp = immediate(field_low, field_high);
+        disp = immediate(field_low, field_high);
         offset += 2;
     }
+    inst.dst = operand_memory(field_rm, disp);
 
     if (!field_w) {
         field_low := <<(head + offset);
@@ -320,7 +332,7 @@ decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
     field_high := <<(head + 2);
 
     reg := operand_register(ifx field_w then "ax" else "al");
-    mem := operand_memory(Memory.{ direct = immediate(field_low, field_high) });
+    mem := operand_memory_direct(immediate(field_low, field_high));
 
     inst.dst = ifx field_to_mem then mem else reg;
     inst.src = ifx field_to_mem then reg else mem;
