@@ -5,7 +5,7 @@
 
 #load "file.jai";
 
-DEBUG :: false;
+DEBUG := true;
 USE_TABLE_DISPATCH :: false;
 
 Register :: string;
@@ -14,6 +14,7 @@ Memory_Mode :: enum {
     MEM_DISP_8  :: 0b01;
     MEM_DISP_16 :: 0b10;
     REGISTER    :: 0b11;
+    DIRECT;
 }
 Memory :: union {
     struct {
@@ -147,7 +148,10 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             // XXX(ryan): refer by register enum, instead of string
             direct_addressing := inst.mode == .MEM_NO_DISP && mem.base1 == "bp" && mem.base2 == "";
 
-            if (direct_addressing) {
+            if (inst.mode == .DIRECT) {
+                return tprint("[%]", mem.direct);
+            }
+            else if (direct_addressing) {
                 return tprint("[%]", mem.disp);
             } else {
                 builder: String_Builder;
@@ -289,7 +293,7 @@ decode_mov_imm_to_reg_mem :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     }
 
     if DEBUG {
-        print("% %, % ; {first_byte=0x%, w=%} (%)\n",
+        print("% %, %  ; {first_byte=0x%, w=%} (%)\n",
         op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
         formatHex(<<head), field_w, op_info.desc);
     }
@@ -297,7 +301,34 @@ decode_mov_imm_to_reg_mem :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     return inst, offset;
 }
 
-decode :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
+decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    inst: Instruction;
+    inst.type = .MOV;
+    inst.mode = .DIRECT;
+
+    field_to_mem := (<<head & 0b10) >> 1;
+    field_w      :=  <<head & 0b01;
+
+    // HACK(ryan): get the asm output to look like DIRECT ADDRESSING
+    field_low  := <<(head + 1);
+    field_high := <<(head + 2);
+
+    reg := operand_register(ifx field_w then "ax" else "al");
+    mem := operand_memory(Memory.{ direct = immediate(field_low, field_high) });
+
+    inst.dst = ifx field_to_mem then mem else reg;
+    inst.src = ifx field_to_mem then reg else mem;
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, to_mem=%, w=%}\n",
+            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_to_mem, field_w);
+    }
+
+    return inst, 3;
+}
+
+decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
     opcode_equals :: inline (test: u8, mask: u8, opcode: u8) -> bool {
         assert(!(opcode & ~mask));
         return (test & mask) == opcode;
@@ -315,6 +346,8 @@ decode :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
             op_info = .{decode_mov_imm_to_reg, "mov", "move immediate to register"};
         } else if opcode_equals(<<head, 0b1111_1110, 0b1100_0110) {
             op_info = .{decode_mov_imm_to_reg_mem, "mov", "move immediate to register/memory"};
+        } else if opcode_equals(<<head, 0b1111_1100, 0b1010_0000) {
+            op_info = .{decode_mov_accumulator, "mov", "move memory to/from accumulator"};
         }
     }
 
@@ -333,7 +366,7 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
     offset := 0;
     while offset < bytes.count {
         head := bytes.data + offset;
-        inst, advance := decode(offset, head);
+        inst, advance := decode_once(offset, head);
 
         print_to_builder(*builder, "% %, %\n", inst.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
         offset += advance;
@@ -385,26 +418,24 @@ run_test :: (actual_asm_path: string) -> bool {
 
     // assemble GT asm to machine code
     // TODO(ryan): give assemble() an explicit output path
-    print("Assembling input '%'\n", temp_asm_path);
+    if DEBUG  print("Assembling input '%' to '%'\n", temp_asm_path, temp_encoded_path);
     if !assemble(temp_asm_path) {
         print("Error assembling '%'\n", temp_asm_path);
         return false;
     }
-    print("  produced '%'\n", temp_encoded_path);
 
     // run our disassembler
-    print("Disassembling '%' to '%':\n", temp_encoded_path, temp_our_asm_path);
+    if DEBUG  print("Disassembling '%' to '%':\n", temp_encoded_path, temp_our_asm_path);
     bytes := file_read_all_as_bytes(temp_encoded_path);
     disassemble(bytes, output_asm_path=temp_our_asm_path);
 
     // assemble our disassembled asm to machine code
     // TODO(ryan): give assemble() an explicit output path
-    print("Assembling input '%'\n", temp_our_asm_path);
+    if DEBUG  print("Assembling input '%' to '%'\n", temp_our_asm_path, temp_our_encoded_path);
     if !assemble(temp_our_asm_path) {
         print("Error assembling '%'\n", temp_our_asm_path);
         return false;
     }
-    print("  produced '%'\n", temp_our_encoded_path);
 
     // binary compare assembled GT vs ours
     encoded_bytes := file_read_all_as_bytes(temp_encoded_path);
@@ -421,10 +452,10 @@ run_test :: (actual_asm_path: string) -> bool {
 }
 
 main :: () {
-    f := "../cmuratori-computer_enhance/perfaware/part1/listing_0037_single_register_mov";
+    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0037_single_register_mov";
     // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0038_many_register_mov";
     // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0039_more_movs";
-    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs";
+    f := "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs";
 
     args := get_command_line_arguments();
     if args.count > 1 && equal(args[1], "test") {
@@ -435,6 +466,7 @@ main :: () {
             "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs.asm",
         ];
 
+        DEBUG = false;
         print("RUNNING TESTS:\n");
         for input_files {
             print("Testing '%'\n", it);
