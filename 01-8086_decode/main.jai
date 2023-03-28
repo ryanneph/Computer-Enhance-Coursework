@@ -49,7 +49,8 @@ Operand :: struct {
 
 Instruction_Type :: enum {
     INVALID :: 0;
-    MOV     :: 1;
+    MOV;
+    ADD;
 }
 Instruction :: struct {
     type:     Instruction_Type;
@@ -81,6 +82,7 @@ Opcode_Table :: struct {
             print_to_builder(*builder, "ops[%] = %;\n", opcode, op_info_string);
         return builder_to_string(*builder);
     }
+    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_add,                \"add\", \"add\" }");
     #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                \"mov\", \"move register/memory to/from register\" }");
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    \"mov\", \"move memory to/from accumulator\"       }");
     #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     \"mov\", \"move immediate to register\"            }");
@@ -155,7 +157,6 @@ operand_immediate :: inline (low: u8, high: u8 = 0, type: Immediate_Type = .IMPL
 }
 
 operand_to_string :: (inst: Instruction, operand: Operand) -> string {
-    assert(inst.type == .MOV); // XXX(ryan): check when new ops are added
     if #complete operand.type == {
         case .REGISTER;
             return operand.reg;
@@ -191,6 +192,79 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
     }
 };
 
+decode_rm :: (head_disp: *u8, in_mode: *Memory_Mode, field_rm: u8, field_w: u8) -> (Operand, bytes_read: s32) {
+    advance_count: s32;
+    rm: Operand;
+    mode := <<in_mode;
+
+    if (mode == .REGISTER) {
+        rm = operand_register(field_rm, field_w);
+        advance_count = 0;
+    } else {
+        rm = operand_memory(field_rm, 0);
+
+        if (mode != .MEM_NO_DISP) {
+            field_low  := <<(head_disp);
+            field_high := ifx mode == .MEM_DISP_16 then <<(head_disp + 1) else 0;
+            rm.mem.disp = immediate(field_low, field_high);
+        }
+
+        if (field_rm == 0b110 && mode == .MEM_NO_DISP) {
+            // DIRECT ADDRESSING
+            field_low  := <<(head_disp);
+            field_high := <<(head_disp + 1);
+            <<in_mode = .MEM_DIRECT;
+            rm = operand_memory_direct(immediate(field_low, field_high));
+            advance_count = 2;
+        } else {
+            assert(mode < 3);
+            advance_count = cast(s32)mode;
+        }
+    }
+
+    return rm, advance_count;
+}
+
+decode_add :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    inst: Instruction;
+    inst.type = .ADD;
+
+    field_w := (<<head & 0b0000_0001);
+
+    advance_count: s32;
+    if !(<<head & 0b1111_1100) {
+        inst.desc = "Reg/memory with register to either";
+
+        field_d := cast(bool)(<<head & 0b10);
+        field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
+        field_reg := (<<(head + 1) & 0b0011_1000) >> 3;
+        field_rm  := (<<(head + 1) & 0b0000_0111);
+
+        inst.mode = memory_mode(field_mod);
+
+        reg := operand_register(field_reg, field_w);
+        rm, extra_advance := decode_rm(head + 2, *inst.mode, field_rm, field_w);
+
+        inst.dst = ifx field_d then reg else rm;
+        inst.src = ifx field_d then rm  else reg;
+
+        advance_count = 2 + extra_advance;
+
+        if DEBUG {
+            print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
+                op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+                formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
+        }
+    } else if <<head & 0b1000_0000 {
+        assert(false, "NOT IMPLEMENTED");
+    } else {
+        assert(cast(bool)(<<head & 0b0000_0100));
+        assert(false, "NOT IMPLEMENTED");
+    }
+
+    return inst, advance_count;
+}
+
 decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     field_d   := (<< head      & 0b0000_0010) >> 1;
     field_w   := (<< head      & 0b0000_0001);
@@ -203,67 +277,32 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
     inst.mode = memory_mode(field_mod);
 
     reg := operand_register(field_reg, field_w);
-    advance_count: s32;
-    if (inst.mode == .REGISTER) {
-        rm := operand_register(field_rm, field_w);
+    rm, extra_advance := decode_rm(head + 2, *inst.mode, field_rm, field_w);
 
-        inst.src  = ifx field_d then rm  else reg;
-        inst.dst  = ifx field_d then reg else rm;
+    inst.src  = ifx field_d then rm  else reg;
+    inst.dst  = ifx field_d then reg else rm;
 
-        advance_count = 2;
-
-        if DEBUG {
-            print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-                op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-                formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
-        }
-    } else {
-        rm := operand_memory(field_rm, 0);
-
-        if (inst.mode != .MEM_NO_DISP) {
-            field_low  := <<(head + 2);
-            field_high := ifx inst.mode == .MEM_DISP_16 then <<(head + 3) else 0;
-            rm.mem.disp = immediate(field_low, field_high);
-        }
-
-        if (field_rm == 0b110 && inst.mode == .MEM_NO_DISP) {
-            // DIRECT ADDRESSING
-            field_low  := <<(head + 2);
-            field_high := <<(head + 3);
-            inst.mode = .MEM_DIRECT;
-            rm = operand_memory_direct(immediate(field_low, field_high));
-            advance_count = 4;
-        } else {
-            assert(field_mod < 3);
-            advance_count = field_mod + 2;
-        }
-
-        inst.src  = ifx field_d then rm  else reg;
-        inst.dst  = ifx field_d then reg else rm;
-
-        if DEBUG {
-            print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-            op_info.mnemonic,
-            operand_to_string(inst, inst.dst),
-            operand_to_string(inst, inst.src),
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
+            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
-        }
     }
 
-    return inst, advance_count;
+    return inst, 2 + extra_advance;
 }
 
 decode_mov_imm_to_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
-    inst: Instruction;
-    inst.type = .MOV;
-
     field_w    := (<< head       & 0b0000_1000) >> 3;
     field_reg  :=  << head       & 0b0000_0111;
     field_low  :=  <<(head + 1);
     field_high :=  ifx field_w then <<(head + 2) else 0;
 
+    inst: Instruction;
+    inst.type = .MOV;
+
     inst.dst = operand_register(field_reg, field_w);
     inst.src = operand_immediate(field_low, field_high);
+    advance_count := cast(s32)(ifx field_w then 3 else 2);
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, w=% reg=%, low=%, high=%} (%)\n",
@@ -271,7 +310,6 @@ decode_mov_imm_to_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adv
             formatHex(<<head), field_w, field_reg, field_low, field_high, op_info.desc);
     }
 
-    advance_count := cast(s32)(ifx field_w then 3 else 2);
     return inst, advance_count;
 }
 
@@ -283,21 +321,11 @@ decode_mov_imm_to_reg_mem :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     inst: Instruction;
     inst.type = .MOV;
     inst.mode = memory_mode(field_mod);
-    inst.dst = operand_memory(effective_address_table[field_rm]);
 
     offset: s32 = 2;
-    disp: u16;
-    if inst.mode == .MEM_DISP_8 {
-        field_low := <<(head + offset);
-        disp = immediate(field_low, 0);
-        offset += 1;
-    } else if inst.mode == .MEM_DISP_16 {
-        field_low  := <<(head + offset);
-        field_high := <<(head + offset + 1);
-        disp = immediate(field_low, field_high);
-        offset += 2;
-    }
-    inst.dst = operand_memory(field_rm, disp);
+    rm, extra_advance := decode_rm(head + offset, *inst.mode, field_rm, field_w);
+    inst.dst = rm;
+    offset += extra_advance;
 
     if (!field_w) {
         field_low := <<(head + offset);
@@ -327,7 +355,6 @@ decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
     field_to_mem := (<<head & 0b10) >> 1;
     field_w      :=  <<head & 0b01;
 
-    // HACK(ryan): get the asm output to look like DIRECT ADDRESSING
     field_low  := <<(head + 1);
     field_high := <<(head + 2);
 
@@ -473,7 +500,8 @@ main :: () {
     // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0037_single_register_mov";
     // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0038_many_register_mov";
     // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0039_more_movs";
-    f := "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs";
+    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs";
+    f := "../cmuratori-computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz";
 
     args := get_command_line_arguments();
     if args.count > 1 && equal(args[1], "test") {
@@ -482,6 +510,7 @@ main :: () {
             "../cmuratori-computer_enhance/perfaware/part1/listing_0038_many_register_mov.asm",
             "../cmuratori-computer_enhance/perfaware/part1/listing_0039_more_movs.asm",
             "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs.asm",
+            "../cmuratori-computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz",
         ];
 
         DEBUG = false;
