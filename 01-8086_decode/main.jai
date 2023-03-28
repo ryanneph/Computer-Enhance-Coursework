@@ -14,7 +14,7 @@ Memory_Mode :: enum {
     MEM_DISP_8  :: 0b01;
     MEM_DISP_16 :: 0b10;
     REGISTER    :: 0b11;
-    DIRECT;
+    MEM_DIRECT;
 }
 Memory :: union {
     struct {
@@ -156,14 +156,8 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
         case .MEMORY; {
             mem := *operand.mem;
 
-            // XXX(ryan): refer by register enum, instead of string
-            direct_addressing := inst.mode == .MEM_NO_DISP && mem.base1 == "bp" && mem.base2 == "";
-
-            if (inst.mode == .DIRECT) {
+            if (inst.mode == .MEM_DIRECT) {
                 return tprint("[%]", mem.direct);
-            }
-            else if (direct_addressing) {
-                return tprint("[%]", mem.disp);
             } else {
                 builder: String_Builder;
                 builder.allocator = temporary_allocator;
@@ -222,10 +216,11 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
         }
 
         if (field_rm == 0b110 && inst.mode == .MEM_NO_DISP) {
-            // DIRECT ADDRESSING (only disp is used in address expression)
+            // DIRECT ADDRESSING
             field_low  := <<(head + 2);
             field_high := <<(head + 3);
-            rm.mem.disp = immediate(field_low, field_high);
+            inst.mode = .MEM_DIRECT;
+            rm.mem.direct = immediate(field_low, field_high);
             advance_count = 4;
         } else {
             advance_counts :: s32.[2, 3, 4];
@@ -315,7 +310,7 @@ decode_mov_imm_to_reg_mem :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
 decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     inst: Instruction;
     inst.type = .MOV;
-    inst.mode = .DIRECT;
+    inst.mode = .MEM_DIRECT;
 
     field_to_mem := (<<head & 0b10) >> 1;
     field_w      :=  <<head & 0b01;
