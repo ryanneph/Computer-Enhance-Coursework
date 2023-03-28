@@ -6,7 +6,7 @@
 #load "file.jai";
 
 DEBUG := true;
-USE_TABLE_DISPATCH :: false;
+USE_TABLE_DISPATCH :: true;
 
 Register :: string;
 Memory_Mode :: enum {
@@ -73,9 +73,20 @@ Opcode_Info :: struct {
 #if USE_TABLE_DISPATCH {
 // NOTE(ryan): jai only supports indexed sparse initialization of arrays *inside structs* for now.
 Opcode_Table :: struct {
-    ops: [64]Opcode_Info;
-    ops[34] = .{ decode_mov, "mov", "move register/memory to/from register" };
+    ops: [256]Opcode_Info;
+
+    assign_op_info_range :: (first: u8, last: u8, op_info_string: string) -> string {
+        builder: String_Builder;
+        for opcode: first..last
+            print_to_builder(*builder, "ops[%] = %;\n", opcode, op_info_string);
+        return builder_to_string(*builder);
+    }
+    #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                \"mov\", \"move register/memory to/from register\" }");
+    #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    \"mov\", \"move memory to/from accumulator\"       }");
+    #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     \"mov\", \"move immediate to register\"            }");
+    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_reg_mem, \"mov\", \"move memory to/from accumulator\"       }");
 }
+
 opcode_table: Opcode_Table;
 }
 
@@ -336,9 +347,9 @@ decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
 
     op_info: Opcode_Info;
     #if USE_TABLE_DISPATCH {
-        opcode := (0b1111_1100 & (<<head));
+        opcode := (0b1111_1111 & (<<head));
         assert(opcode < opcode_table.ops.count);
-        op_info := opcode_table.ops[opcode];
+        op_info = opcode_table.ops[opcode];
     } else {
         if opcode_equals(<<head, 0b1111_1100, 0b1000_1000) {
             op_info = .{decode_mov, "mov", "move register/memory to/from register"};
