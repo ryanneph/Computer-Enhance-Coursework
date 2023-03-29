@@ -81,6 +81,7 @@ Opcode_Table :: struct {
         return builder_to_string(*builder);
     }
     #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  \"add\", \"<must be set by dispatch handler>\"     }");
+    #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum, \"add\", \"<must be set by dispatch handler>\"     }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    \"add\", \"<must be set by dispatch handler>\"     }");
     #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                \"mov\", \"move register/memory to/from register\" }");
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    \"mov\", \"move memory to/from accumulator\"       }");
@@ -271,7 +272,7 @@ decode_arith_reg_with_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
             op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
+            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
     }
 
     return inst, 2 + extra_advance;
@@ -305,10 +306,36 @@ decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, s=% w=%, mod=% inst=% rm=%} (%)\n",
             op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_s, field_w, field_mod, field_inst, field_rm, op_info.desc);
+            formatHex(<<head), field_s, field_w, field_mod, field_inst, field_rm, inst.desc);
     }
 
     return inst, offset;
+}
+
+decode_arith_imm_to_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_inst := (<<head & 0b1111_1110) >> 1;
+    field_w    := (<<head & 0b0000_0001);
+    field_low  := <<(head + 1);
+    field_high := ifx field_w then <<(head + 2) else 0;
+
+    inst: Instruction;
+    if field_inst == {
+        case 0b10;
+            inst.type = .ADD;
+            inst.desc = "add immediate to register/memory";
+        case; assert(false, "NOT IMPLEMENTED");
+    }
+
+    inst.dst = operand_register(ifx field_w then "ax" else "al");
+    inst.src = operand_immediate(field_low, field_high);
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, inst=% w=%} (%)\n",
+            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_inst, field_w, inst.desc);
+    }
+
+    return inst, 2 + field_w;
 }
 
 decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
