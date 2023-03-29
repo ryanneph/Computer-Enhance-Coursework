@@ -80,11 +80,12 @@ Opcode_Table :: struct {
             print_to_builder(*builder, "ops[%] = %;\n", opcode, op_info_string);
         return builder_to_string(*builder);
     }
-    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_add,                \"add\", \"add\" }");
+    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  \"add\", \"<must be set by dispatch handler>\"     }");
+    #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    \"add\", \"<must be set by dispatch handler>\"     }");
     #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                \"mov\", \"move register/memory to/from register\" }");
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    \"mov\", \"move memory to/from accumulator\"       }");
     #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     \"mov\", \"move immediate to register\"            }");
-    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_reg_mem, \"mov\", \"move memory to/from accumulator\"       }");
+    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      \"mov\", \"move immediate to register/memory\"     }");
 }
 opcode_table: Opcode_Table;
 
@@ -188,7 +189,27 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
     }
 };
 
-decode_rm :: (head_disp: *u8, in_mode: *Memory_Mode, field_rm: u8, field_w: u8) -> (Operand, bytes_read: s32) {
+_decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8, implicit_size: bool = false) -> (Operand, bytes_read: s32) {
+    advance_count: s32;
+    imm: Operand;
+
+    if (!field_w || field_s) {
+        field_low := <<(head_imm);
+        imm = operand_immediate(field_low, 0, ifx field_s then Immediate_Type.WORD else .BYTE);
+        advance_count = 1;
+    } else {
+        field_low  := <<(head_imm);
+        field_high := <<(head_imm + 1);
+        imm = operand_immediate(field_low, field_high, .WORD);
+        advance_count = 2;
+    }
+
+    imm.imm.type = ifx implicit_size then .IMPLICIT else imm.imm.type;
+
+    return imm, advance_count;
+}
+
+_decode_rm :: (head_disp: *u8, in_mode: *Memory_Mode, field_rm: u8, field_w: u8) -> (Operand, bytes_read: s32) {
     advance_count: s32;
     rm: Operand;
     mode := <<in_mode;
@@ -221,44 +242,73 @@ decode_rm :: (head_disp: *u8, in_mode: *Memory_Mode, field_rm: u8, field_w: u8) 
     return rm, advance_count;
 }
 
-decode_add :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+decode_arith_reg_with_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_inst := (<<head       & 0b0001_0000) >> 4;
+    field_d    := (<<head       & 0b0000_0010) >> 1;
+    field_w    := (<<head       & 0b0000_0001);
+    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_reg  := (<<(head + 1) & 0b0011_1000) >> 3;
+    field_rm   := (<<(head + 1) & 0b0000_0111);
+
     inst: Instruction;
-    inst.type = .ADD;
-
-    field_w := (<<head & 0b0000_0001);
-
-    advance_count: s32;
-    if !(<<head & 0b1111_1100) {
-        inst.desc = "Reg/memory with register to either";
-
-        field_d := cast(bool)(<<head & 0b10);
-        field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
-        field_reg := (<<(head + 1) & 0b0011_1000) >> 3;
-        field_rm  := (<<(head + 1) & 0b0000_0111);
-
-        inst.mode = memory_mode(field_mod);
-
-        reg := operand_register(field_reg, field_w);
-        rm, extra_advance := decode_rm(head + 2, *inst.mode, field_rm, field_w);
-
-        inst.dst = ifx field_d then reg else rm;
-        inst.src = ifx field_d then rm  else reg;
-
-        advance_count = 2 + extra_advance;
-
-        if DEBUG {
-            print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-                op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-                formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
-        }
-    } else if <<head & 0b1000_0000 {
-        assert(false, "NOT IMPLEMENTED");
-    } else {
-        assert(cast(bool)(<<head & 0b0000_0100));
-        assert(false, "NOT IMPLEMENTED");
+    inst.mode = memory_mode(field_mod);
+    if field_inst == {
+        case 0;
+            inst.type = .ADD;
+            inst.desc = "add Reg/memory with register to either";
+        // case 1;
+        //     inst.type = .ADC;
+        //     inst.desc = "add with carry Reg/memory with register to either";
+        case; assert(false, "NOT IMPLEMENTED");
     }
 
-    return inst, advance_count;
+    reg := operand_register(field_reg, field_w);
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
+
+    inst.dst = ifx field_d then reg else rm;
+    inst.src = ifx field_d then rm  else reg;
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
+            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
+    }
+
+    return inst, 2 + extra_advance;
+}
+
+decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_s    := (<<head       & 0b0000_0010) >> 1;
+    field_w    := (<<head       & 0b0000_0001);
+    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_inst := (<<(head + 1) & 0b0011_1000) >> 3;
+    field_rm   := (<<(head + 1) & 0b0000_0111);
+
+    inst: Instruction;
+    inst.mode = memory_mode(field_mod);
+    if field_inst == {
+        case 0;
+            inst.type = .ADD;
+            inst.desc = "add immediate to register/memory";
+        case; assert(false, "NOT IMPLEMENTED");
+    }
+
+    offset: s32 = 2;
+    rm, extra_advance := _decode_rm(head + offset, *inst.mode, field_rm, field_w);
+    offset += extra_advance;
+    imm, extra_advance2 := _decode_immediate(head + offset, field_s, field_w, implicit_size=inst.mode == .REGISTER);
+    offset += extra_advance2;
+
+    inst.src = imm;
+    inst.dst = rm;
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, s=% w=%, mod=% inst=% rm=%} (%)\n",
+            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_s, field_w, field_mod, field_inst, field_rm, op_info.desc);
+    }
+
+    return inst, offset;
 }
 
 decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
@@ -273,7 +323,7 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
     inst.mode = memory_mode(field_mod);
 
     reg := operand_register(field_reg, field_w);
-    rm, extra_advance := decode_rm(head + 2, *inst.mode, field_rm, field_w);
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
 
     inst.src  = ifx field_d then rm  else reg;
     inst.dst  = ifx field_d then reg else rm;
@@ -309,7 +359,7 @@ decode_mov_imm_to_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adv
     return inst, advance_count;
 }
 
-decode_mov_imm_to_reg_mem :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+decode_mov_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     field_w := <<head & 0b0000_0001;
     field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
     field_rm  := (<<(head + 1) & 0b0000_0111);
@@ -319,20 +369,13 @@ decode_mov_imm_to_reg_mem :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     inst.mode = memory_mode(field_mod);
 
     offset: s32 = 2;
-    rm, extra_advance := decode_rm(head + offset, *inst.mode, field_rm, field_w);
+    rm, extra_advance := _decode_rm(head + offset, *inst.mode, field_rm, field_w);
     inst.dst = rm;
     offset += extra_advance;
 
-    if (!field_w) {
-        field_low := <<(head + offset);
-        inst.src = operand_immediate(field_low, 0, .BYTE);
-        offset += 1;
-    } else {
-        field_low  := <<(head + offset);
-        field_high := <<(head + offset + 1);
-        inst.src = operand_immediate(field_low, field_high, .WORD);
-        offset += 2;
-    }
+    imm, extra_advance2 := _decode_immediate(head + offset, 0, field_w, implicit_size=inst.mode == .REGISTER);
+    inst.src = imm;
+    offset += extra_advance2;
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, w=%} (%)\n",
@@ -370,11 +413,6 @@ decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
 }
 
 decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
-    opcode_equals :: inline (test: u8, mask: u8, opcode: u8) -> bool {
-        assert(!(opcode & ~mask));
-        return (test & mask) == opcode;
-    }
-
     opcode := (0b1111_1111 & (<<head));
     assert(opcode < opcode_table.ops.count);
     op_info := opcode_table.ops[opcode];
@@ -493,7 +531,7 @@ main :: () {
             "../cmuratori-computer_enhance/perfaware/part1/listing_0038_many_register_mov.asm",
             "../cmuratori-computer_enhance/perfaware/part1/listing_0039_more_movs.asm",
             "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs.asm",
-            "../cmuratori-computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz",
+            "../cmuratori-computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz.asm",
         ];
 
         DEBUG = false;
