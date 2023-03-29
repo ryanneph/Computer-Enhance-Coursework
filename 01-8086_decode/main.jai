@@ -50,6 +50,7 @@ Instruction_Type :: enum {
     INVALID :: 0;
     MOV;
     ADD;
+    ADC;
 }
 Instruction :: struct {
     type:     Instruction_Type;
@@ -82,6 +83,8 @@ Opcode_Table :: struct {
     }
     #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  \"add\", \"<must be set by dispatch handler>\"     }");
     #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum, \"add\", \"<must be set by dispatch handler>\"     }");
+    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,  \"adc\", \"<must be set by dispatch handler>\"     }");
+    #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum, \"adc\", \"<must be set by dispatch handler>\"     }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    \"add\", \"<must be set by dispatch handler>\"     }");
     #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                \"mov\", \"move register/memory to/from register\" }");
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    \"mov\", \"move memory to/from accumulator\"       }");
@@ -257,9 +260,9 @@ decode_arith_reg_with_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, 
         case 0;
             inst.type = .ADD;
             inst.desc = "add Reg/memory with register to either";
-        // case 1;
-        //     inst.type = .ADC;
-        //     inst.desc = "add with carry Reg/memory with register to either";
+        case 1;
+            inst.type = .ADC;
+            inst.desc = "add with carry Reg/memory with register to either";
         case; assert(false, "NOT IMPLEMENTED");
     }
 
@@ -291,6 +294,10 @@ decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
         case 0;
             inst.type = .ADD;
             inst.desc = "add immediate to register/memory";
+        case 0b010;
+            inst.type = .ADC;
+            inst.desc = "add with carry immediate to register/memory";
+            op_info.mnemonic = "adc"; // HACK(ryan): just pass in Instruction_Type and derive mnemonic from that
         case; assert(false, "NOT IMPLEMENTED");
     }
 
@@ -322,8 +329,11 @@ decode_arith_imm_to_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     if field_inst == {
         case 0b10;
             inst.type = .ADD;
-            inst.desc = "add immediate to register/memory";
-        case; assert(false, "NOT IMPLEMENTED");
+            inst.desc = "add immediate to accumulator";
+        case 0b1010;
+            inst.type = .ADC;
+            inst.desc = "add with carry immediate to accumulator";
+        case; assert(false, "NOT IMPLEMENTED %", field_inst);
     }
 
     inst.dst = operand_register(ifx field_w then "ax" else "al");
