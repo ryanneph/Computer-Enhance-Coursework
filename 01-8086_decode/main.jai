@@ -83,7 +83,6 @@ Decode_Proc :: #type (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance
 Opcode_Info :: struct {
     decode: Decode_Proc;
     type:   Instruction_Type;
-    desc:   string;
 }
 
 // NOTE(ryan): jai only supports indexed sparse initialization of arrays *inside structs* for now.
@@ -96,15 +95,15 @@ Opcode_Table :: struct {
             print_to_builder(*builder, "ops[%] = %;\n", opcode, op_info_string);
         return builder_to_string(*builder);
     }
-    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  .ADD, \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum, .ADD, \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,  .ADC, \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum, .ADC, \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    .ADD, \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV, \"move register/memory to/from register\" }");
-    #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV, \"move memory to/from accumulator\"       }");
-    #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     .MOV, \"move immediate to register\"            }");
-    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV, \"move immediate to register/memory\"     }");
+    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  .ADD,     }");
+    #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum, .ADD,     }");
+    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,  .ADC,     }");
+    #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum, .ADC,     }");
+    #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    .INVALID, }");
+    #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV,     }");
+    #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV,     }");
+    #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     .MOV,     }");
+    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV,     }");
 }
 opcode_table: Opcode_Table;
 
@@ -271,15 +270,7 @@ decode_arith_reg_with_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, 
 
     inst: Instruction;
     inst.mode = memory_mode(field_mod);
-    if field_inst == {
-        case 0;
-            inst.type = .ADD;
-            inst.desc = "add Reg/memory with register to either";
-        case 1;
-            inst.type = .ADC;
-            inst.desc = "add with carry Reg/memory with register to either";
-        case; assert(false, "NOT IMPLEMENTED");
-    }
+    inst.desc = "Reg/memory with register to either";
 
     reg := operand_register(field_reg, field_w);
     rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
@@ -289,7 +280,7 @@ decode_arith_reg_with_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, 
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
     }
 
@@ -304,14 +295,17 @@ decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
     field_rm   := (<<(head + 1) & 0b0000_0111);
 
     inst: Instruction;
+    inst.desc = "immediate to register/memory";
     inst.mode = memory_mode(field_mod);
+
+    // the instruction is not known from the first byte, so we must determine in this dispatch
+    // handler.
+    assert(op_info.type == .INVALID);
     if field_inst == {
         case 0;
-            inst.type = .ADD;
-            inst.desc = "add immediate to register/memory";
+            op_info.type = .ADD;
         case 0b010;
-            inst.type = .ADC;
-            inst.desc = "add with carry immediate to register/memory";
+            op_info.type = .ADC;
         case; assert(false, "NOT IMPLEMENTED");
     }
 
@@ -326,7 +320,7 @@ decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, s=% w=%, mod=% inst=% rm=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_s, field_w, field_mod, field_inst, field_rm, inst.desc);
     }
 
@@ -340,22 +334,14 @@ decode_arith_imm_to_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     field_high := ifx field_w then <<(head + 2) else 0;
 
     inst: Instruction;
-    if field_inst == {
-        case 0b10;
-            inst.type = .ADD;
-            inst.desc = "add immediate to accumulator";
-        case 0b1010;
-            inst.type = .ADC;
-            inst.desc = "add with carry immediate to accumulator";
-        case; assert(false, "NOT IMPLEMENTED %", field_inst);
-    }
+    inst.desc = "immediate to accumulator";
 
     inst.dst = operand_register(ifx field_w then "ax" else "al");
     inst.src = operand_immediate(field_low, field_high);
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, inst=% w=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_inst, field_w, inst.desc);
     }
 
@@ -370,7 +356,7 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
     field_rm  := (<<(head + 1) & 0b0000_0111);
 
     inst: Instruction;
-    inst.type = .MOV;
+    inst.desc = "register/memory to/from register";
     inst.mode = memory_mode(field_mod);
 
     reg := operand_register(field_reg, field_w);
@@ -381,8 +367,8 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
     }
 
     return inst, 2 + extra_advance;
@@ -395,7 +381,7 @@ decode_mov_imm_to_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adv
     field_high :=  ifx field_w then <<(head + 2) else 0;
 
     inst: Instruction;
-    inst.type = .MOV;
+    inst.desc = "immediate to register";
 
     inst.dst = operand_register(field_reg, field_w);
     inst.src = operand_immediate(field_low, field_high);
@@ -403,8 +389,8 @@ decode_mov_imm_to_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adv
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, w=% reg=%, low=%, high=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_w, field_reg, field_low, field_high, op_info.desc);
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_w, field_reg, field_low, field_high, inst.desc);
     }
 
     return inst, advance_count;
@@ -416,7 +402,7 @@ decode_mov_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adva
     field_rm  := (<<(head + 1) & 0b0000_0111);
 
     inst: Instruction;
-    inst.type = .MOV;
+    inst.desc = "move immediate to register";
     inst.mode = memory_mode(field_mod);
 
     offset: s32 = 2;
@@ -430,8 +416,8 @@ decode_mov_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adva
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, w=%} (%)\n",
-        mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-        formatHex(<<head), field_w, op_info.desc);
+        mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+        formatHex(<<head), field_w, inst.desc);
     }
 
     return inst, offset;
@@ -439,7 +425,7 @@ decode_mov_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adva
 
 decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     inst: Instruction;
-    inst.type = .MOV;
+    inst.desc = "memory to/from accumulator";
     inst.mode = .MEM_DIRECT;
 
     field_to_mem := (<<head & 0b10) >> 1;
@@ -456,8 +442,8 @@ decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, to_mem=%, w=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_to_mem, field_w, op_info.desc);
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_to_mem, field_w, inst.desc);
     }
 
     return inst, 3;
@@ -472,7 +458,8 @@ decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
         assert(false, "Unknown opcode for first byte: 0x%", formatHex(<<head));
 
     inst, advance_count := op_info.decode(*op_info, head);
-    inst.desc = op_info.desc;
+    inst.type = op_info.type;
+    inst.desc = inst.desc;
     return inst, advance_count;
 }
 
@@ -483,6 +470,8 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
     while offset < bytes.count {
         head := bytes.data + offset;
         inst, advance := decode_once(offset, head);
+        assert(inst.type != .INVALID);
+        assert(inst.desc.count > 0);
 
         print_to_builder(*builder, "% %, %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
         offset += advance;
