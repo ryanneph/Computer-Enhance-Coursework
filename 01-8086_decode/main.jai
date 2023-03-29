@@ -46,18 +46,33 @@ Operand :: struct {
     };
 }
 
-Instruction_Type :: enum {
+// TODO(ryan): Hook the compilation-loop and populate the matched-index table automatically
+Instruction_Type :: enum u32 {
     INVALID :: 0;
-    MOV;
-    ADD;
-    ADC;
+    ADC;          // @mnemonic:adc
+    ADD;          // @mnemonic:add
+    MOV;          // @mnemonic:mov
+
+    _ENUM_COUNT;
 }
+Mnemonic_Table :: struct {
+    strings: [Instruction_Type._ENUM_COUNT]string;
+    strings[Instruction_Type.ADD] = "add";
+    strings[Instruction_Type.ADC] = "adc";
+    strings[Instruction_Type.MOV] = "mov";
+}
+mnemonic_table: Mnemonic_Table;
+mnemonic_string :: inline (type: Instruction_Type) -> string {
+    assert(type != .INVALID);
+    assert(cast(s64)type < mnemonic_table.strings.count);
+    return mnemonic_table.strings[type];
+}
+
 Instruction :: struct {
     type:     Instruction_Type;
     mode:     Memory_Mode;
 
     // TODO(ryan): maybe store *Opcode_Info for indirection instead?
-    mnemonic: string;
     desc:     string;
 
     src:      Operand;
@@ -66,9 +81,9 @@ Instruction :: struct {
 
 Decode_Proc :: #type (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32);
 Opcode_Info :: struct {
-    decode:   Decode_Proc;
-    mnemonic: string;
-    desc:     string;
+    decode: Decode_Proc;
+    type:   Instruction_Type;
+    desc:   string;
 }
 
 // NOTE(ryan): jai only supports indexed sparse initialization of arrays *inside structs* for now.
@@ -81,15 +96,15 @@ Opcode_Table :: struct {
             print_to_builder(*builder, "ops[%] = %;\n", opcode, op_info_string);
         return builder_to_string(*builder);
     }
-    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  \"add\", \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum, \"add\", \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,  \"adc\", \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum, \"adc\", \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    \"add\", \"<must be set by dispatch handler>\"     }");
-    #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                \"mov\", \"move register/memory to/from register\" }");
-    #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    \"mov\", \"move memory to/from accumulator\"       }");
-    #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     \"mov\", \"move immediate to register\"            }");
-    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      \"mov\", \"move immediate to register/memory\"     }");
+    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  .ADD, \"<must be set by dispatch handler>\"     }");
+    #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum, .ADD, \"<must be set by dispatch handler>\"     }");
+    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,  .ADC, \"<must be set by dispatch handler>\"     }");
+    #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum, .ADC, \"<must be set by dispatch handler>\"     }");
+    #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    .ADD, \"<must be set by dispatch handler>\"     }");
+    #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV, \"move register/memory to/from register\" }");
+    #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV, \"move memory to/from accumulator\"       }");
+    #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     .MOV, \"move immediate to register\"            }");
+    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV, \"move immediate to register/memory\"     }");
 }
 opcode_table: Opcode_Table;
 
@@ -274,7 +289,7 @@ decode_arith_reg_with_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, 
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
     }
 
@@ -297,7 +312,6 @@ decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
         case 0b010;
             inst.type = .ADC;
             inst.desc = "add with carry immediate to register/memory";
-            op_info.mnemonic = "adc"; // HACK(ryan): just pass in Instruction_Type and derive mnemonic from that
         case; assert(false, "NOT IMPLEMENTED");
     }
 
@@ -312,7 +326,7 @@ decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, s=% w=%, mod=% inst=% rm=%} (%)\n",
-            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_s, field_w, field_mod, field_inst, field_rm, inst.desc);
     }
 
@@ -341,7 +355,7 @@ decode_arith_imm_to_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, inst=% w=%} (%)\n",
-            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_inst, field_w, inst.desc);
     }
 
@@ -367,7 +381,7 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, op_info.desc);
     }
 
@@ -389,7 +403,7 @@ decode_mov_imm_to_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adv
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, w=% reg=%, low=%, high=%} (%)\n",
-            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             formatHex(<<head), field_w, field_reg, field_low, field_high, op_info.desc);
     }
 
@@ -416,7 +430,7 @@ decode_mov_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adva
 
     if DEBUG {
         print("% %, %  ; {first_byte=0x%, w=%} (%)\n",
-        op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+        mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
         formatHex(<<head), field_w, op_info.desc);
     }
 
@@ -441,9 +455,9 @@ decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
     inst.src = ifx field_to_mem then reg else mem;
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, to_mem=%, w=%}\n",
-            op_info.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_to_mem, field_w);
+        print("% %, %  ; {first_byte=0x%, to_mem=%, w=%} (%)\n",
+            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_to_mem, field_w, op_info.desc);
     }
 
     return inst, 3;
@@ -458,7 +472,6 @@ decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
         assert(false, "Unknown opcode for first byte: 0x%", formatHex(<<head));
 
     inst, advance_count := op_info.decode(*op_info, head);
-    inst.mnemonic = op_info.mnemonic;
     inst.desc = op_info.desc;
     return inst, advance_count;
 }
@@ -471,7 +484,7 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
         head := bytes.data + offset;
         inst, advance := decode_once(offset, head);
 
-        print_to_builder(*builder, "% %, %\n", inst.mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
+        print_to_builder(*builder, "% %, %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
         offset += advance;
     }
 
