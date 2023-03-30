@@ -90,8 +90,10 @@ Opcode_Table :: struct {
 
     assign_op_info_range :: (first: u8, last: u8, op_info_string: string) -> string {
         builder: String_Builder;
-        for opcode: first..last
+        for opcode: first..last {
             print_to_builder(*builder, "ops[%] = %;\n", opcode, op_info_string);
+            // print("ops[%] = %\n", opcode, op_info_string);
+        }
         return builder_to_string(*builder);
     }
     #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  .ADD,     }");
@@ -105,6 +107,13 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV,     }");
 }
 opcode_table: Opcode_Table;
+#run (){
+    vacant_count := 0;
+    for opcode_table.ops {
+        if !it.decode  vacant_count += 1;
+    }
+    print("There are % of % unimplemented instructions\n\n", vacant_count, opcode_table.ops.count);
+}();
 
 formatHex :: #bake_arguments formatInt(base=16);
 
