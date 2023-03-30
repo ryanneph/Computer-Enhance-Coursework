@@ -4,16 +4,15 @@
 
 path_join :: #bake_arguments join(separator="/");
 
-assemble :: (asm_path: string) -> bool {
+assemble :: (asm_path: string, output_path: string) -> bool {
     args: [..]string;
-    array_add(*args, "nasm");
-    array_add(*args, asm_path);
+    array_add(*args, "nasm", "-o", output_path, asm_path);
     result, output_string, error_string := run_command(..args, capture_and_return_output=true);
     if result.type != .EXITED {
         print("Process failed to execute with reason: %", result.type);
         return false;
     } else if (result.exit_code != 0) {
-        print("Error in command '%':\n%", join(..args), error_string);
+        print("Error in command '%':\n%", join(..args, " "), error_string);
         return false;
     }
 
@@ -37,9 +36,8 @@ run_one_test :: (actual_asm_path: string) -> bool {
     copy_file(actual_asm_path, temp_asm_path);
 
     // assemble GT asm to machine code
-    // TODO(ryan): give assemble() an explicit output path
     if DEBUG  print("Assembling input '%' to '%'\n", temp_asm_path, temp_encoded_path);
-    if !assemble(temp_asm_path) {
+    if !assemble(temp_asm_path, temp_encoded_path) {
         print("Error assembling '%'\n", temp_asm_path);
         return false;
     }
@@ -50,9 +48,8 @@ run_one_test :: (actual_asm_path: string) -> bool {
     disassemble(bytes, output_asm_path=temp_our_asm_path);
 
     // assemble our disassembled asm to machine code
-    // TODO(ryan): give assemble() an explicit output path
     if DEBUG  print("Assembling input '%' to '%'\n", temp_our_asm_path, temp_our_encoded_path);
-    if !assemble(temp_our_asm_path) {
+    if !assemble(temp_our_asm_path, temp_our_encoded_path) {
         print("Error assembling '%'\n", temp_our_asm_path);
         return false;
     }
