@@ -31,10 +31,14 @@ Immediate :: struct {
     type: Immediate_Type;
     val: u16;
 }
+Increment :: struct {
+    val: s16;
+}
 Operand_Type :: enum {
     REGISTER;
     MEMORY;
     IMMEDIATE;
+    INCREMENT;
 }
 Operand :: struct {
     type: Operand_Type;
@@ -42,6 +46,7 @@ Operand :: struct {
         reg: Register;
         mem: Memory;
         imm: Immediate;
+        inc: Increment;
     };
 }
 
@@ -51,6 +56,7 @@ Instruction_Type :: enum u32 {
     ADC;          // @mnemonic:adc
     ADD;          // @mnemonic:add
     CMP;          // @mnemonic:cmp
+    JNZ;          // @mnemonic:jnz
     SUB;          // @mnemonic:sub
     MOV;          // @mnemonic:mov
     _ENUM_COUNT;
@@ -60,6 +66,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.ADD] = "add";
     strings[Instruction_Type.ADC] = "adc";
     strings[Instruction_Type.CMP] = "cmp";
+    strings[Instruction_Type.JNZ] = "jnz";
     strings[Instruction_Type.SUB] = "sub";
     strings[Instruction_Type.MOV] = "mov";
 }
@@ -67,7 +74,9 @@ mnemonic_table: Mnemonic_Table;
 mnemonic_string :: inline (type: Instruction_Type) -> string {
     assert(type != .INVALID);
     assert(cast(s64)type < mnemonic_table.strings.count);
-    return mnemonic_table.strings[type];
+    mnemonic :=  mnemonic_table.strings[type];
+    assert(mnemonic.count > 0, "mnemonic string not defined for Instruction_Type.%\n", type);
+    return mnemonic;
 }
 
 Instruction :: struct {
@@ -77,8 +86,9 @@ Instruction :: struct {
     // TODO(ryan): maybe store *Opcode_Info for indirection instead?
     desc:     string;
 
-    src:      Operand;
+    // For single operand instructions, only dst is used
     dst:      Operand;
+    src:      Operand;
 }
 
 Decode_Proc :: #type (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32);
@@ -107,6 +117,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum, .SUB,     }");
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,  .CMP,     }");
     #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum, .CMP,     }");
+    #insert #run assign_op_info_range(0x75, 0x75, ".{ decode_jnz,                .JNZ,     }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    .INVALID, }");
     #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV,     }");
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV,     }");
@@ -185,11 +196,32 @@ immediate :: inline (low: u8, high: u8 = 0) -> u16 {
 operand_immediate :: inline (low: u8, high: u8 = 0, type: Immediate_Type = .IMPLICIT) -> Operand {
     return Operand.{ type = .IMMEDIATE, imm = Immediate.{ type = type, val = immediate(low, high) }};
 }
+operand_increment :: inline (low: u8) -> Operand {
+    return Operand.{ type = .INCREMENT, inc = Increment.{ val = cast(s16)(cast,no_check(s8)low) } };
+}
+operand_increment :: inline (low: u8, high: u8) -> Operand {
+    return Operand.{ type = .INCREMENT, inc = Increment.{ val = ((cast,no_check(s16)high) << 8) | cast,no_check(s16)low } };
+}
 
 operand_to_string :: (inst: Instruction, operand: Operand) -> string {
     if #complete operand.type == {
         case .REGISTER;
             return operand.reg;
+        case .INCREMENT;
+            builder: String_Builder;
+            builder.allocator = temporary_allocator;
+
+            // HACK(ryan): relying on size of JNZ instruction is 2 bytes (so offset is relative to
+            // "after decoding JNZ instruction"). We could emit labels instead with a slightly more
+            // sophisticated disassembly loop.
+            // TODO(ryan): consider storing instruction size on Increment for flexibility here;
+            append(*builder, "$+2");
+            inc := inst.dst.inc.val;
+            if (inc) {
+                if inc > 0  print_to_builder(*builder, " + %", inc);
+                else        print_to_builder(*builder, " - %", -inc);
+            }
+            return builder_to_string(*builder);
         case .IMMEDIATE;
             explicit_size := "";
             if operand.imm.type      == .BYTE  explicit_size = "byte ";
@@ -367,6 +399,20 @@ decode_arith_imm_to_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     return inst, 2 + field_w;
 }
 
+decode_jnz :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    inst: Instruction;
+    inst.desc = "jump on not equal/not zero";
+    inst.dst = operand_increment(<<(head +1));
+
+    if DEBUG {
+        print("% %  ; {first_byte=0x%, increment=%} (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), formatHex(<<head),
+            inst.dst.inc.val, inst.desc);
+    }
+
+    return inst, 2;
+}
+
 decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     field_d   := (<< head      & 0b0000_0010) >> 1;
     field_w   := (<< head      & 0b0000_0001);
@@ -478,7 +524,10 @@ decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
 
     inst, advance_count := op_info.decode(*op_info, head);
     inst.type = op_info.type;
-    inst.desc = inst.desc;
+
+    assert(inst.type != .INVALID, "Instruction dispatch handler must resolve instruction if not resolvable automatically from the first byte");
+    assert(inst.desc.count > 0, "Instruction dispatch handler must provide a description");
+
     return inst, advance_count;
 }
 
@@ -489,11 +538,18 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
     while offset < bytes.count {
         head := bytes.data + offset;
         inst, advance := decode_once(offset, head);
-        assert(inst.type != .INVALID);
-        assert(inst.desc.count > 0);
-
-        print_to_builder(*builder, "% %, %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
         offset += advance;
+
+        // TODO(ryan): add a ".UNARY" flag for these instead
+        if (inst.type == .JNZ) {
+            // HACK(ryan): relying on size of JNZ instruction is 2 bytes (so offset is relative to
+            // "after decoding JNZ instruction"). We could emit labels instead with a slightly more
+            // sophisticated disassembly loop.
+            assert(inst.dst.type == .INCREMENT);
+            print_to_builder(*builder, "% %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst));
+        } else {
+            print_to_builder(*builder, "% %, %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
+        }
     }
 
     file, success := file_open(output_asm_path, for_writing=true, keep_existing_content=false);
