@@ -50,15 +50,16 @@ Instruction_Type :: enum u32 {
     INVALID :: 0;
     ADC;          // @mnemonic:adc
     ADD;          // @mnemonic:add
+    CMP;          // @mnemonic:cmp
     SUB;          // @mnemonic:sub
     MOV;          // @mnemonic:mov
-
     _ENUM_COUNT;
 }
 Mnemonic_Table :: struct {
     strings: [Instruction_Type._ENUM_COUNT]string;
     strings[Instruction_Type.ADD] = "add";
     strings[Instruction_Type.ADC] = "adc";
+    strings[Instruction_Type.CMP] = "cmp";
     strings[Instruction_Type.SUB] = "sub";
     strings[Instruction_Type.MOV] = "mov";
 }
@@ -104,6 +105,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum, .ADC,     }");
     #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_arith_reg_with_rm,  .SUB,     }");
     #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum, .SUB,     }");
+    #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,  .CMP,     }");
+    #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum, .CMP,     }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    .INVALID, }");
     #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV,     }");
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV,     }");
@@ -320,6 +323,8 @@ decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
             op_info.type = .ADC;
         case 0b101;
             op_info.type = .SUB;
+        case 0b111;
+            op_info.type = .CMP;
         case; assert(false, "% NOT IMPLEMENTED", field_inst);
     }
 
