@@ -56,19 +56,59 @@ Instruction_Type :: enum u32 {
     ADC;          // @mnemonic:adc
     ADD;          // @mnemonic:add
     CMP;          // @mnemonic:cmp
-    JNZ;          // @mnemonic:jnz
+    JO;           // @mnemonic:jo
+    JNO;          // @mnemonic:jno
+    JB_JNAE_JC;   // @mnemonic:jb
+    JNB_JAE_JNC;  // @mnemonic:jnb
+    JE_JZ;        // @mnemonic:je
+    JNE_JNZ;      // @mnemonic:jne
+    JBE_JNA;      // @mnemonic:jbe
+    JNBE_JA;      // @mnemonic:ja
+    JS;           // @mnemonic:js
+    JNS;          // @mnemonic:jns
+    JP_JPE;       // @mnemonic:jp
+    JNP_JPO;      // @mnemonic:jnp
+    JL_JNGE;      // @mnemonic:jl
+    JNL_JGE;      // @mnemonic:jge
+    JLE_JNG;      // @mnemonic:jle
+    JNLE_JG;      // @mnemonic:jg
+    LOOP;         // @mnemonic:loop
+    LOOPZ;        // @mnemonic:loopz
+    LOOPNZ;       // @mnemonic:loopnz
+    JCXZ;         // @mnemonic:jcxz
     SUB;          // @mnemonic:sub
     MOV;          // @mnemonic:mov
     _ENUM_COUNT;
 }
 Mnemonic_Table :: struct {
     strings: [Instruction_Type._ENUM_COUNT]string;
-    strings[Instruction_Type.ADD] = "add";
-    strings[Instruction_Type.ADC] = "adc";
-    strings[Instruction_Type.CMP] = "cmp";
-    strings[Instruction_Type.JNZ] = "jnz";
-    strings[Instruction_Type.SUB] = "sub";
-    strings[Instruction_Type.MOV] = "mov";
+    strings[Instruction_Type.ADD]         = "add";
+    strings[Instruction_Type.ADC]         = "adc";
+    strings[Instruction_Type.CMP]         = "cmp";
+    strings[Instruction_Type.JO]          = "jo";
+    strings[Instruction_Type.JNO]         = "jno";
+    strings[Instruction_Type.JB_JNAE_JC]  = "jb";
+    strings[Instruction_Type.JNB_JAE_JNC] = "jnb";
+    strings[Instruction_Type.JE_JZ]       = "je";
+    strings[Instruction_Type.JNE_JNZ]     = "jne";
+    strings[Instruction_Type.JBE_JNA]     = "jbe";
+    strings[Instruction_Type.JNBE_JA]     = "ja";
+    strings[Instruction_Type.JS]          = "js";
+    strings[Instruction_Type.JNS]         = "jns";
+    strings[Instruction_Type.JP_JPE]      = "jp";
+    strings[Instruction_Type.JNP_JPO]     = "jnp";
+    strings[Instruction_Type.JL_JNGE]     = "jl";
+    strings[Instruction_Type.JNL_JGE]     = "jge";
+    strings[Instruction_Type.JLE_JNG]     = "jle";
+    strings[Instruction_Type.JNLE_JG]     = "jg";
+    strings[Instruction_Type.LOOP]        = "loop";
+    strings[Instruction_Type.LOOPZ]       = "loopz";
+    strings[Instruction_Type.LOOPNZ]      = "loopnz";
+    strings[Instruction_Type.JCXZ]        = "jcxz";
+    strings[Instruction_Type.SUB]         = "sub";
+    strings[Instruction_Type.MOV]         = "mov";
+    strings[Instruction_Type.SUB]         = "sub";
+    strings[Instruction_Type.MOV]         = "mov";
 }
 mnemonic_table: Mnemonic_Table;
 mnemonic_string :: inline (type: Instruction_Type) -> string {
@@ -79,16 +119,22 @@ mnemonic_string :: inline (type: Instruction_Type) -> string {
     return mnemonic;
 }
 
+Operand_Count :: enum {
+    UNARY   :: 1;
+    BINARY  :: 2;
+}
+
 Instruction :: struct {
-    type:     Instruction_Type;
-    mode:     Memory_Mode;
+    type: Instruction_Type;
+    operand_count := Operand_Count.BINARY;
+    mode: Memory_Mode;
 
     // TODO(ryan): maybe store *Opcode_Info for indirection instead?
-    desc:     string;
+    desc: string;
 
     // For single operand instructions, only dst is used
-    dst:      Operand;
-    src:      Operand;
+    dst: Operand;
+    src: Operand;
 }
 
 Decode_Proc :: #type (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32);
@@ -103,26 +149,43 @@ Opcode_Table :: struct {
 
     assign_op_info_range :: (first: u8, last: u8, op_info_string: string) -> string {
         builder: String_Builder;
-        for opcode: first..last {
+        for opcode: first..last
             print_to_builder(*builder, "ops[%] = %;\n", opcode, op_info_string);
-            // print("ops[%] = %\n", opcode, op_info_string);
-        }
         return builder_to_string(*builder);
     }
-    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  .ADD,     }");
-    #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum, .ADD,     }");
-    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,  .ADC,     }");
-    #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum, .ADC,     }");
-    #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_arith_reg_with_rm,  .SUB,     }");
-    #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum, .SUB,     }");
-    #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,  .CMP,     }");
-    #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum, .CMP,     }");
-    #insert #run assign_op_info_range(0x75, 0x75, ".{ decode_jnz,                .JNZ,     }");
-    #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    .INVALID, }");
-    #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV,     }");
-    #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV,     }");
-    #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     .MOV,     }");
-    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV,     }");
+    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  .ADD,         }");
+    #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum, .ADD,         }");
+    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,  .ADC,         }");
+    #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum, .ADC,         }");
+    #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_arith_reg_with_rm,  .SUB,         }");
+    #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum, .SUB,         }");
+    #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,  .CMP,         }");
+    #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum, .CMP,         }");
+    #insert #run assign_op_info_range(0x70, 0x70, ".{ decode_jump_cond_inc8,     .JO,          }");
+    #insert #run assign_op_info_range(0x71, 0x71, ".{ decode_jump_cond_inc8,     .JNO,         }");
+    #insert #run assign_op_info_range(0x72, 0x72, ".{ decode_jump_cond_inc8,     .JB_JNAE_JC,  }");
+    #insert #run assign_op_info_range(0x73, 0x73, ".{ decode_jump_cond_inc8,     .JNB_JAE_JNC, }");
+    #insert #run assign_op_info_range(0x74, 0x74, ".{ decode_jump_cond_inc8,     .JE_JZ,       }");
+    #insert #run assign_op_info_range(0x75, 0x75, ".{ decode_jump_cond_inc8,     .JNE_JNZ,     }");
+    #insert #run assign_op_info_range(0x76, 0x76, ".{ decode_jump_cond_inc8,     .JBE_JNA,     }");
+    #insert #run assign_op_info_range(0x77, 0x77, ".{ decode_jump_cond_inc8,     .JNBE_JA,     }");
+    #insert #run assign_op_info_range(0x78, 0x78, ".{ decode_jump_cond_inc8,     .JS,          }");
+    #insert #run assign_op_info_range(0x79, 0x79, ".{ decode_jump_cond_inc8,     .JNS,         }");
+    #insert #run assign_op_info_range(0x7A, 0x7A, ".{ decode_jump_cond_inc8,     .JP_JPE,      }");
+    #insert #run assign_op_info_range(0x7B, 0x7B, ".{ decode_jump_cond_inc8,     .JNP_JPO,     }");
+    #insert #run assign_op_info_range(0x7C, 0x7C, ".{ decode_jump_cond_inc8,     .JL_JNGE,     }");
+    #insert #run assign_op_info_range(0x7D, 0x7D, ".{ decode_jump_cond_inc8,     .JNL_JGE,     }");
+    #insert #run assign_op_info_range(0x7E, 0x7E, ".{ decode_jump_cond_inc8,     .JLE_JNG,     }");
+    #insert #run assign_op_info_range(0x7F, 0x7F, ".{ decode_jump_cond_inc8,     .JNLE_JG,     }");
+    #insert #run assign_op_info_range(0xE0, 0xE0, ".{ decode_jump_cond_inc8,     .LOOPNZ,      }");
+    #insert #run assign_op_info_range(0xE1, 0xE1, ".{ decode_jump_cond_inc8,     .LOOPZ,       }");
+    #insert #run assign_op_info_range(0xE2, 0xE2, ".{ decode_jump_cond_inc8,     .LOOP,        }");
+    #insert #run assign_op_info_range(0xE3, 0xE3, ".{ decode_jump_cond_inc8,     .JCXZ,        }");
+    #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    .INVALID,     }");
+    #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV,         }");
+    #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV,         }");
+    #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     .MOV,         }");
+    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV,         }");
 }
 opcode_table: Opcode_Table;
 #run (){
@@ -399,9 +462,10 @@ decode_arith_imm_to_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     return inst, 2 + field_w;
 }
 
-decode_jnz :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+decode_jump_cond_inc8 :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     inst: Instruction;
-    inst.desc = "jump on not equal/not zero";
+    inst.operand_count = .UNARY;
+    inst.desc = "jump short (8-bit) if condition is met";
     inst.dst = operand_increment(<<(head +1));
 
     if DEBUG {
@@ -541,9 +605,9 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
         offset += advance;
 
         // TODO(ryan): add a ".UNARY" flag for these instead
-        if (inst.type == .JNZ) {
-            // HACK(ryan): relying on size of JNZ instruction is 2 bytes (so offset is relative to
-            // "after decoding JNZ instruction"). We could emit labels instead with a slightly more
+        if (inst.operand_count == .UNARY) {
+            // HACK(ryan): relying on size of Jcc instructions is 2 bytes (so offset is relative to
+            // "after decoding Jcc instruction"). We could emit labels instead with a slightly more
             // sophisticated disassembly loop.
             assert(inst.dst.type == .INCREMENT);
             print_to_builder(*builder, "% %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst));
