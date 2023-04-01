@@ -81,6 +81,7 @@ Instruction_Type :: enum u32 {
     MOV;          // @mnemonic:mov
     PUSH;         // @mnemonic:push
     POP;          // @mnemonic:pop
+    XCHG;         // @mnemonic:xchg
     _ENUM_COUNT;
 }
 Mnemonic_Table :: struct {
@@ -112,6 +113,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.MOV]         = "mov";
     strings[Instruction_Type.PUSH]        = "push";
     strings[Instruction_Type.POP]         = "pop";
+    strings[Instruction_Type.XCHG]        = "xchg";
 }
 mnemonic_table: Mnemonic_Table;
 mnemonic_string :: inline (type: Instruction_Type) -> string {
@@ -192,7 +194,9 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xE2, 0xE2, ".{ decode_jump_cond_inc8,     .LOOP,        }");
     #insert #run assign_op_info_range(0xE3, 0xE3, ".{ decode_jump_cond_inc8,     .JCXZ,        }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    .INVALID,     }");
+    #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_arith_reg_with_rm,  .XCHG,        }");
     #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV,         }");
+    #insert #run assign_op_info_range(0x90, 0x97, ".{ decode_arith_reg_with_accum, .XCHG,      }");
     #insert #run assign_op_info_range(0xFF, 0xFF, ".{ decode_push_pop_rm,        .PUSH,        }");
     #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_push_pop_reg,       .PUSH,        }");
     #insert #run assign_op_info_range(0x8F, 0x8F, ".{ decode_push_pop_rm,        .POP,         }");
@@ -498,6 +502,23 @@ decode_arith_imm_to_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction,
     }
 
     return inst, 2 + field_w;
+}
+
+decode_arith_reg_with_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_reg := <<head & 0b0000_0111;
+
+    inst: Instruction;
+    inst.desc = "register with accumulator";
+    inst.dst = operand_register("ax");
+    inst.src = operand_register(field_reg, 1);
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, reg=%} (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_reg, inst.desc);
+    }
+
+    return inst, 1;
 }
 
 decode_jump_cond_inc8 :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
