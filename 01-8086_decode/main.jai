@@ -22,26 +22,27 @@ Memory :: union {
     };
     direct: u16;
 }
-Immediate_Type :: enum {
-    IMPLICIT;
-    BYTE;
-    WORD;
-}
 Immediate :: struct {
-    type: Immediate_Type;
     val: u16;
 }
 Increment :: struct {
     val: s16;
 }
 Operand_Type :: enum {
+    INVALID;
     REGISTER;
     MEMORY;
     IMMEDIATE;
     INCREMENT;
 }
+Operand_Size :: enum {
+    IMPLICIT;
+    BYTE;
+    WORD;
+}
 Operand :: struct {
     type: Operand_Type;
+    size: Operand_Size;
     union {
         reg: Register;
         mem: Memory;
@@ -78,6 +79,8 @@ Instruction_Type :: enum u32 {
     JCXZ;         // @mnemonic:jcxz
     SUB;          // @mnemonic:sub
     MOV;          // @mnemonic:mov
+    PUSH;         // @mnemonic:push
+    POP;          // @mnemonic:pop
     _ENUM_COUNT;
 }
 Mnemonic_Table :: struct {
@@ -107,8 +110,8 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.JCXZ]        = "jcxz";
     strings[Instruction_Type.SUB]         = "sub";
     strings[Instruction_Type.MOV]         = "mov";
-    strings[Instruction_Type.SUB]         = "sub";
-    strings[Instruction_Type.MOV]         = "mov";
+    strings[Instruction_Type.PUSH]        = "push";
+    strings[Instruction_Type.POP]         = "pop";
 }
 mnemonic_table: Mnemonic_Table;
 mnemonic_string :: inline (type: Instruction_Type) -> string {
@@ -155,8 +158,15 @@ Opcode_Table :: struct {
     }
     #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,  .ADD,         }");
     #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum, .ADD,         }");
+    #insert #run assign_op_info_range(0x06, 0x06, ".{ decode_push_pop_seg,       .PUSH,        }");
+    #insert #run assign_op_info_range(0x07, 0x07, ".{ decode_push_pop_seg,       .POP,         }");
+    #insert #run assign_op_info_range(0x0E, 0x0E, ".{ decode_push_pop_seg,       .PUSH,        }");
     #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,  .ADC,         }");
     #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum, .ADC,         }");
+    #insert #run assign_op_info_range(0x16, 0x16, ".{ decode_push_pop_seg,       .PUSH,        }");
+    #insert #run assign_op_info_range(0x17, 0x17, ".{ decode_push_pop_seg,       .POP,         }");
+    #insert #run assign_op_info_range(0x1E, 0x1E, ".{ decode_push_pop_seg,       .PUSH,        }");
+    #insert #run assign_op_info_range(0x1F, 0x1F, ".{ decode_push_pop_seg,       .POP,         }");
     #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_arith_reg_with_rm,  .SUB,         }");
     #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum, .SUB,         }");
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,  .CMP,         }");
@@ -183,6 +193,10 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xE3, 0xE3, ".{ decode_jump_cond_inc8,     .JCXZ,        }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,    .INVALID,     }");
     #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV,         }");
+    #insert #run assign_op_info_range(0xFF, 0xFF, ".{ decode_push_pop_rm,        .PUSH,        }");
+    #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_push_pop_reg,       .PUSH,        }");
+    #insert #run assign_op_info_range(0x8F, 0x8F, ".{ decode_push_pop_rm,        .POP,         }");
+    #insert #run assign_op_info_range(0x58, 0x5F, ".{ decode_push_pop_reg,       .POP,         }");
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV,         }");
     #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     .MOV,         }");
     #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV,         }");
@@ -216,6 +230,15 @@ register_name_table :: string.[
     "dh", "si", // 0b110w
     "bh", "di", // 0b111w
 ];
+// NOTE(ryan): directly indexed by 2-bit "seg".
+segment_name_table :: string.[
+          //   reg  : register encoding
+          //      w : width (0: byte, 1: word)
+    "es", // 0b00
+    "cs", // 0b01
+    "ss", // 0b10
+    "ds", // 0b11
+];
 effective_address_table :: Memory.[
     .{ base1 = "bx", base2 = "si", },
     .{ base1 = "bx", base2 = "di", },
@@ -233,11 +256,18 @@ register :: (reg: u8, word: u8) -> Register {
 
     return register_name_table[index];
 }
+segment :: inline (seg: u8) -> Register {
+    assert(seg < 4);
+    return segment_name_table[seg];
+}
 operand_register :: inline (reg: u8, word: u8) -> Operand {
     return Operand.{ type = .REGISTER, reg = register(reg, word) };
 }
 operand_register :: inline (name: string) -> Operand {
     return Operand.{ type = .REGISTER, reg = name };
+}
+operand_segment :: inline (seg: u8) -> Operand {
+    return Operand.{ type = .REGISTER, reg = segment(seg) };
 }
 operand_memory :: inline (mem: Memory) -> Operand {
     return Operand.{ type = .MEMORY, mem = mem };
@@ -256,8 +286,8 @@ operand_memory_direct :: inline (addr: u16) -> Operand {
 immediate :: inline (low: u8, high: u8 = 0) -> u16 {
     return ((cast(u16)high) << 8) | cast(u16)low;
 }
-operand_immediate :: inline (low: u8, high: u8 = 0, type: Immediate_Type = .IMPLICIT) -> Operand {
-    return Operand.{ type = .IMMEDIATE, imm = Immediate.{ type = type, val = immediate(low, high) }};
+operand_immediate :: inline (low: u8, high: u8 = 0, size: Operand_Size = .IMPLICIT) -> Operand {
+    return Operand.{ type = .IMMEDIATE, size = size, imm = Immediate.{ val = immediate(low, high) }};
 }
 operand_increment :: inline (low: u8) -> Operand {
     return Operand.{ type = .INCREMENT, inc = Increment.{ val = cast(s16)(cast,no_check(s8)low) } };
@@ -287,18 +317,24 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             return builder_to_string(*builder);
         case .IMMEDIATE;
             explicit_size := "";
-            if operand.imm.type      == .BYTE  explicit_size = "byte ";
-            else if operand.imm.type == .WORD  explicit_size = "word ";
+            if operand.size      == .BYTE  explicit_size = "byte ";
+            else if operand.size == .WORD  explicit_size = "word ";
             return tprint("%0%0", explicit_size, operand.imm.val);
         case .MEMORY; {
             mem := *operand.mem;
 
-            if (inst.mode == .MEM_DIRECT) {
-                return tprint("[%]", mem.direct);
-            } else {
-                builder: String_Builder;
-                builder.allocator = temporary_allocator;
+            builder: String_Builder;
+            builder.allocator = temporary_allocator;
 
+            // push/pop require it
+            if operand.size == .BYTE
+                print_to_builder(*builder, "byte ");
+            else if operand.size == .WORD
+                print_to_builder(*builder, "word ");
+
+            if (inst.mode == .MEM_DIRECT) {
+                print_to_builder(*builder, "[%]", mem.direct);
+            } else {
                 print_to_builder(*builder, "[%", mem.base1);
                 if mem.base2.count
                     print_to_builder(*builder, " + %", mem.base2);
@@ -310,10 +346,10 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
                     else         print_to_builder(*builder, " - %", -disp);
                 }
                 append(*builder, "]");
-
-                return builder_to_string(*builder);
             }
+            return builder_to_string(*builder);
         }
+        case .INVALID; assert(false, "Operand type has not been set");
     }
 };
 
@@ -323,7 +359,7 @@ _decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8, implicit_size: bo
 
     if (!field_w || field_s) {
         field_low := <<(head_imm);
-        imm = operand_immediate(field_low, 0, ifx field_s then Immediate_Type.WORD else .BYTE);
+        imm = operand_immediate(field_low, 0, ifx field_s then Operand_Size.WORD else .BYTE);
         advance_count = 1;
     } else {
         field_low  := <<(head_imm);
@@ -332,7 +368,7 @@ _decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8, implicit_size: bo
         advance_count = 2;
     }
 
-    imm.imm.type = ifx implicit_size then .IMPLICIT else imm.imm.type;
+    imm.size = ifx implicit_size then .IMPLICIT else imm.size;
 
     return imm, advance_count;
 }
@@ -578,6 +614,64 @@ decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
     return inst, 3;
 }
 
+decode_push_pop_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_rm  := (<<(head + 1) & 0b0000_0111);
+
+    inst: Instruction;
+    inst.desc = "register or memory to/from stack";
+    inst.mode = memory_mode(field_mod);
+    inst.operand_count = .UNARY;
+
+    rm, advance_extra := _decode_rm(head + 2, *inst.mode, field_rm, 1);
+    inst.dst = rm;
+    inst.dst.size = .WORD;
+
+    if DEBUG {
+        print("% %  ; {first_byte=0x%, mod=% rm=%} (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst),
+            formatHex(<<head), field_mod, field_rm, inst.desc);
+    }
+
+    return inst, 2 + advance_extra;
+}
+
+decode_push_pop_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_reg := (<<(head) & 0b0000_0111);
+
+    inst: Instruction;
+    inst.desc = "register to/from stack";
+    inst.operand_count = .UNARY;
+
+    inst.dst = operand_register(field_reg, 1);
+
+    if DEBUG {
+        print("% %  ; {first_byte=0x%, reg=%} (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst),
+            formatHex(<<head), field_reg, inst.desc);
+    }
+
+    return inst, 1;
+}
+
+decode_push_pop_seg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_seg := (<<(head) & 0b0001_1000) >> 3;
+
+    inst: Instruction;
+    inst.desc = "segment register to/from stack";
+    inst.operand_count = .UNARY;
+
+    inst.dst = operand_segment(field_seg);
+
+    if DEBUG {
+        print("% %  ; {first_byte=0x%, seg=%} (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst),
+            formatHex(<<head), field_seg, inst.desc);
+    }
+
+    return inst, 1;
+}
+
 decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
     opcode := (0b1111_1111 & (<<head));
     assert(opcode < opcode_table.ops.count);
@@ -609,7 +703,7 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
             // HACK(ryan): relying on size of Jcc instructions is 2 bytes (so offset is relative to
             // "after decoding Jcc instruction"). We could emit labels instead with a slightly more
             // sophisticated disassembly loop.
-            assert(inst.dst.type == .INCREMENT);
+            assert(inst.dst.type != .INVALID);
             print_to_builder(*builder, "% %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst));
         } else {
             print_to_builder(*builder, "% %, %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
@@ -631,7 +725,8 @@ main :: () {
     // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0038_many_register_mov";
     // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0039_more_movs";
     // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs";
-    f := "../cmuratori-computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz";
+    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz";
+    f := "../cmuratori-computer_enhance/perfaware/part1/listing_0042_completionist_decode";
 
     args := get_command_line_arguments();
     if args.count > 1 && equal(args[1], "test") {
@@ -641,6 +736,7 @@ main :: () {
             "../cmuratori-computer_enhance/perfaware/part1/listing_0039_more_movs.asm",
             "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs.asm",
             "../cmuratori-computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz.asm",
+            "../cmuratori-computer_enhance/perfaware/part1/listing_0042_completionist_decode.asm",
         ];
         run_tests(input_files);
     } else {
