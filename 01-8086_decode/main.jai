@@ -57,6 +57,7 @@ Instruction_Type :: enum u32 {
     ADC;          // @mnemonic:adc
     ADD;          // @mnemonic:add
     CMP;          // @mnemonic:cmp
+    IN;           // @mnemonic:in
     JO;           // @mnemonic:jo
     JNO;          // @mnemonic:jno
     JB_JNAE_JC;   // @mnemonic:jb
@@ -79,6 +80,7 @@ Instruction_Type :: enum u32 {
     JCXZ;         // @mnemonic:jcxz
     SUB;          // @mnemonic:sub
     MOV;          // @mnemonic:mov
+    OUT;          // @mnemonic:out
     PUSH;         // @mnemonic:push
     POP;          // @mnemonic:pop
     XCHG;         // @mnemonic:xchg
@@ -89,6 +91,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.ADD]         = "add";
     strings[Instruction_Type.ADC]         = "adc";
     strings[Instruction_Type.CMP]         = "cmp";
+    strings[Instruction_Type.IN]          = "in";
     strings[Instruction_Type.JO]          = "jo";
     strings[Instruction_Type.JNO]         = "jno";
     strings[Instruction_Type.JB_JNAE_JC]  = "jb";
@@ -111,6 +114,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.JCXZ]        = "jcxz";
     strings[Instruction_Type.SUB]         = "sub";
     strings[Instruction_Type.MOV]         = "mov";
+    strings[Instruction_Type.OUT]         = "out";
     strings[Instruction_Type.PUSH]        = "push";
     strings[Instruction_Type.POP]         = "pop";
     strings[Instruction_Type.XCHG]        = "xchg";
@@ -204,6 +208,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV,         }");
     #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     .MOV,         }");
     #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV,         }");
+    #insert #run assign_op_info_range(0xE4, 0xE7, ".{ decode_in_out,             .INVALID,     }");
+    #insert #run assign_op_info_range(0xEC, 0xEF, ".{ decode_in_out,             .INVALID,     }");
 }
 opcode_table: Opcode_Table;
 #run (){
@@ -519,6 +525,38 @@ decode_arith_reg_with_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instructio
     }
 
     return inst, 1;
+}
+
+decode_in_out :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_fv   := (<<head & 0b0000_1000) >> 3; // fixed:0, variable:1
+    field_inst := (<<head & 0b0000_0010) >> 1; // IN:0, OUT:1
+    field_w    :=  <<head & 0b0000_0001;
+
+    accum := operand_register(ifx field_w then "ax" else "al");
+
+    inst: Instruction;
+    op_info.type = ifx field_inst then Instruction_Type.OUT else .IN;
+
+    port: Operand;
+    if field_fv {
+        inst.desc = "accumulator with variable i/o port addressed by register";
+        port = operand_register("dx");
+    } else {
+        inst.desc = "accumulator with fixed i/o port";
+        port = operand_immediate(<<(head + 1));
+    }
+
+    inst.dst = ifx field_inst then port  else accum;
+    inst.src = ifx field_inst then accum else port;
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, field_inst=% field_w=%} (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_inst, field_w, inst.desc);
+    }
+
+    advance_count : s32 = 1 + cast(s32) ifx !field_fv then 1 else 0;
+    return inst, advance_count;
 }
 
 decode_jump_cond_inc8 :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
