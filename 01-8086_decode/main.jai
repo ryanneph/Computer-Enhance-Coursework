@@ -129,6 +129,7 @@ mnemonic_string :: inline (type: Instruction_Type) -> string {
 }
 
 Operand_Count :: enum {
+    ZERO    :: 0;
     UNARY   :: 1;
     BINARY  :: 2;
 }
@@ -759,11 +760,14 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
         inst, advance := decode_once(offset, head);
         offset += advance;
 
-        // TODO(ryan): add a ".UNARY" flag for these instead
-        if (inst.operand_count == .UNARY) {
-            print_to_builder(*builder, "% %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst));
-        } else {
-            print_to_builder(*builder, "% %, %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
+        mnemonic := mnemonic_string(inst.type);
+        if #complete inst.operand_count == {
+            case .ZERO;
+                print_to_builder(*builder, "%\n", mnemonic);
+            case .UNARY;
+                print_to_builder(*builder, "% %\n", mnemonic, operand_to_string(inst, inst.dst));
+            case .BINARY;
+                print_to_builder(*builder, "% %, %\n", mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
         }
     }
 
