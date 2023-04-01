@@ -297,6 +297,8 @@ operand_increment :: inline (low: u8, high: u8) -> Operand {
 }
 
 operand_to_string :: (inst: Instruction, operand: Operand) -> string {
+    assert(operand.type != .INVALID);
+
     if #complete operand.type == {
         case .REGISTER;
             return operand.reg;
@@ -700,10 +702,6 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
 
         // TODO(ryan): add a ".UNARY" flag for these instead
         if (inst.operand_count == .UNARY) {
-            // HACK(ryan): relying on size of Jcc instructions is 2 bytes (so offset is relative to
-            // "after decoding Jcc instruction"). We could emit labels instead with a slightly more
-            // sophisticated disassembly loop.
-            assert(inst.dst.type != .INVALID);
             print_to_builder(*builder, "% %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst));
         } else {
             print_to_builder(*builder, "% %, %\n", mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
