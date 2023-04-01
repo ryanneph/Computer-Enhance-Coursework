@@ -84,6 +84,7 @@ Instruction_Type :: enum u32 {
     PUSH;         // @mnemonic:push
     POP;          // @mnemonic:pop
     XCHG;         // @mnemonic:xchg
+    XLAT;         // @mnemonic:xlat
     _ENUM_COUNT;
 }
 Mnemonic_Table :: struct {
@@ -118,6 +119,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.PUSH]        = "push";
     strings[Instruction_Type.POP]         = "pop";
     strings[Instruction_Type.XCHG]        = "xchg";
+    strings[Instruction_Type.XLAT]        = "xlat";
 }
 mnemonic_table: Mnemonic_Table;
 mnemonic_string :: inline (type: Instruction_Type) -> string {
@@ -209,6 +211,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV,         }");
     #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     .MOV,         }");
     #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV,         }");
+    #insert #run assign_op_info_range(0xd7, 0xd7, ".{ decode_no_operands,        .XLAT,        }");
     #insert #run assign_op_info_range(0xE4, 0xE7, ".{ decode_in_out,             .INVALID,     }");
     #insert #run assign_op_info_range(0xEC, 0xEF, ".{ decode_in_out,             .INVALID,     }");
 }
@@ -674,6 +677,18 @@ decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
     }
 
     return inst, 3;
+}
+
+decode_no_operands :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    inst: Instruction;
+    inst.desc = "no operands";
+    inst.operand_count = .ZERO;
+
+    if DEBUG {
+        print("%  ; {first_byte=0x%} (%)\n", mnemonic_string(op_info.type), formatHex(<<head), inst.desc);
+    }
+
+    return inst, 1;
 }
 
 decode_push_pop_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
