@@ -74,6 +74,9 @@ Instruction_Type :: enum u32 {
     JNL_JGE;      // @mnemonic:jge
     JLE_JNG;      // @mnemonic:jle
     JNLE_JG;      // @mnemonic:jg
+    LDS;          // @mnemonic:lds
+    LEA;          // @mnemonic:lea
+    LES;          // @mnemonic:les
     LOOP;         // @mnemonic:loop
     LOOPZ;        // @mnemonic:loopz
     LOOPNZ;       // @mnemonic:loopnz
@@ -109,6 +112,9 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.JNL_JGE]     = "jge";
     strings[Instruction_Type.JLE_JNG]     = "jle";
     strings[Instruction_Type.JNLE_JG]     = "jg";
+    strings[Instruction_Type.LDS]         = "lds";
+    strings[Instruction_Type.LEA]         = "lea";
+    strings[Instruction_Type.LES]         = "les";
     strings[Instruction_Type.LOOP]        = "loop";
     strings[Instruction_Type.LOOPZ]       = "loopz";
     strings[Instruction_Type.LOOPNZ]      = "loopnz";
@@ -196,6 +202,9 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x7D, 0x7D, ".{ decode_jump_cond_inc8,     .JNL_JGE,     }");
     #insert #run assign_op_info_range(0x7E, 0x7E, ".{ decode_jump_cond_inc8,     .JLE_JNG,     }");
     #insert #run assign_op_info_range(0x7F, 0x7F, ".{ decode_jump_cond_inc8,     .JNLE_JG,     }");
+    #insert #run assign_op_info_range(0x8d, 0x8d, ".{ decode_load_to_reg_seg,    .LEA,         }");
+    #insert #run assign_op_info_range(0xc4, 0xc4, ".{ decode_load_to_reg_seg,    .LES,         }");
+    #insert #run assign_op_info_range(0xc5, 0xc5, ".{ decode_load_to_reg_seg,    .LDS,         }");
     #insert #run assign_op_info_range(0xE0, 0xE0, ".{ decode_jump_cond_inc8,     .LOOPNZ,      }");
     #insert #run assign_op_info_range(0xE1, 0xE1, ".{ decode_jump_cond_inc8,     .LOOPZ,       }");
     #insert #run assign_op_info_range(0xE2, 0xE2, ".{ decode_jump_cond_inc8,     .LOOP,        }");
@@ -311,7 +320,7 @@ operand_increment :: inline (low: u8, high: u8) -> Operand {
 }
 
 operand_to_string :: (inst: Instruction, operand: Operand) -> string {
-    assert(operand.type != .INVALID);
+    assert(operand.type != .INVALID, "cannot convert invalid operand to string");
 
     if #complete operand.type == {
         case .REGISTER;
@@ -577,6 +586,42 @@ decode_jump_cond_inc8 :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adv
 
     return inst, 2;
 }
+
+decode_load_to_reg_seg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_sr  := (<< head      & 0b0000_1000) >> 3; // 0:seg, 1:reg
+    field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_reg := (<<(head + 1) & 0b0011_1000) >> 3;
+    field_rm  := (<<(head + 1) & 0b0000_0111);
+
+    descs :: string.[
+        "load far pointer to segment+register",
+        "load effective address to register",
+    ];
+
+    inst: Instruction;
+    inst.mode = memory_mode(field_mod);
+    inst.desc = descs[field_sr];
+
+    // LDS, LES (field_sr: 0)
+    // loads 32-bit pointer from memory (at effective address) into segment register (seg selector: top 16-bits)
+    // and destination register (seg offset: bottom 16-bits)
+
+    // LEA (field_sr: 1)
+    // computes effective address for source operand and store in register addressed by destination operand
+
+    inst.dst = operand_register(field_reg, 1);
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, 1);
+    inst.src = rm;
+
+    if DEBUG {
+        print("% %, % ; (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            inst.desc);
+    }
+
+    return inst, 2 + extra_advance;
+}
+
 
 decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     field_d   := (<< head      & 0b0000_0010) >> 1;
