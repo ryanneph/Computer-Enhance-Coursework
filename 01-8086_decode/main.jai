@@ -87,6 +87,7 @@ Instruction_Type :: enum u32 {
     LOOPZ;        // @mnemonic:loopz
     LOOPNZ;       // @mnemonic:loopnz
     JCXZ;         // @mnemonic:jcxz
+    SBB;          // @mnemonic:sbb
     SUB;          // @mnemonic:sub
     MOV;          // @mnemonic:mov
     OUT;          // @mnemonic:out
@@ -135,6 +136,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.LOOPZ]       = "loopz";
     strings[Instruction_Type.LOOPNZ]      = "loopnz";
     strings[Instruction_Type.JCXZ]        = "jcxz";
+    strings[Instruction_Type.SBB]         = "sbb";
     strings[Instruction_Type.SUB]         = "sub";
     strings[Instruction_Type.MOV]         = "mov";
     strings[Instruction_Type.OUT]         = "out";
@@ -203,8 +205,10 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x1E, 0x1E, ".{ decode_push_pop_seg,       .PUSH,        }");
     #insert #run assign_op_info_range(0x1F, 0x1F, ".{ decode_push_pop_seg,       .POP,         }");
     #insert #run assign_op_info_range(0x27, 0x27, ".{ decode_no_operands,        .DAA,         }");
+    #insert #run assign_op_info_range(0x18, 0x1B, ".{ decode_arith_reg_with_rm,  .SBB,         }");
     #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_arith_reg_with_rm,  .SUB,         }");
     #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum, .SUB,         }");
+    #insert #run assign_op_info_range(0x1C, 0x1D, ".{ decode_arith_imm_to_accum, .SBB,         }");
     #insert #run assign_op_info_range(0x2F, 0x2F, ".{ decode_no_operands,        .DAS,         }");
     #insert #run assign_op_info_range(0x37, 0x37, ".{ decode_no_operands,        .AAA,         }");
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,  .CMP,         }");
@@ -507,6 +511,8 @@ decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
             op_info.type = .ADD;
         case 0b010;
             op_info.type = .ADC;
+        case 0b011;
+            op_info.type = .SBB;
         case 0b101;
             op_info.type = .SUB;
         case 0b111;
