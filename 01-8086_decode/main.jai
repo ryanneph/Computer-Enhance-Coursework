@@ -195,29 +195,21 @@ Opcode_Table :: struct {
             print_to_builder(*builder, "ops[%] = %;\n", opcode, op_info_string);
         return builder_to_string(*builder);
     }
-    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,    .ADD,         }");
     #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum,   .ADD,         }");
-    #insert #run assign_op_info_range(0x06, 0x06, ".{ decode_push_pop_seg,         .PUSH,        }");
-    #insert #run assign_op_info_range(0x07, 0x07, ".{ decode_push_pop_seg,         .POP,         }");
-    #insert #run assign_op_info_range(0x0E, 0x0E, ".{ decode_push_pop_seg,         .PUSH,        }");
-    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,    .ADC,         }");
     #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum,   .ADC,         }");
-    #insert #run assign_op_info_range(0x16, 0x16, ".{ decode_push_pop_seg,         .PUSH,        }");
-    #insert #run assign_op_info_range(0x17, 0x17, ".{ decode_push_pop_seg,         .POP,         }");
-    #insert #run assign_op_info_range(0x1E, 0x1E, ".{ decode_push_pop_seg,         .PUSH,        }");
-    #insert #run assign_op_info_range(0x1F, 0x1F, ".{ decode_push_pop_seg,         .POP,         }");
-    #insert #run assign_op_info_range(0x27, 0x27, ".{ decode_no_operands,          .DAA,         }");
+    #insert #run assign_op_info_range(0x1C, 0x1D, ".{ decode_arith_imm_to_accum,   .SBB,         }");
+    #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum,   .SUB,         }");
+    #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum,   .CMP,         }");
+    #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,      .INVALID,     }");
+    #insert #run assign_op_info_range(0x90, 0x97, ".{ decode_arith_reg_with_accum, .XCHG,        }");
+    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,    .ADD,         }");
+    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,    .ADC,         }");
     #insert #run assign_op_info_range(0x18, 0x1B, ".{ decode_arith_reg_with_rm,    .SBB,         }");
     #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_arith_reg_with_rm,    .SUB,         }");
-    #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum,   .SUB,         }");
-    #insert #run assign_op_info_range(0x1C, 0x1D, ".{ decode_arith_imm_to_accum,   .SBB,         }");
-    #insert #run assign_op_info_range(0x2F, 0x2F, ".{ decode_no_operands,          .DAS,         }");
-    #insert #run assign_op_info_range(0x37, 0x37, ".{ decode_no_operands,          .AAA,         }");
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,    .CMP,         }");
-    #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum,   .CMP,         }");
-    #insert #run assign_op_info_range(0x3F, 0x3F, ".{ decode_no_operands,          .AAS,         }");
-    #insert #run assign_op_info_range(0x40, 0x47, ".{ decode_unary_reg,            .INC,         }");
-    #insert #run assign_op_info_range(0x48, 0x4F, ".{ decode_unary_reg,            .DEC,         }");
+    #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_arith_reg_with_rm,    .XCHG,        }");
+    #insert #run assign_op_info_range(0xE4, 0xE7, ".{ decode_in_out,               .INVALID,     }");
+    #insert #run assign_op_info_range(0xEC, 0xEF, ".{ decode_in_out,               .INVALID,     }");
     #insert #run assign_op_info_range(0x70, 0x70, ".{ decode_jump_cond_inc8,       .JO,          }");
     #insert #run assign_op_info_range(0x71, 0x71, ".{ decode_jump_cond_inc8,       .JNO,         }");
     #insert #run assign_op_info_range(0x72, 0x72, ".{ decode_jump_cond_inc8,       .JB_JNAE_JC,  }");
@@ -234,32 +226,40 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x7D, 0x7D, ".{ decode_jump_cond_inc8,       .JNL_JGE,     }");
     #insert #run assign_op_info_range(0x7E, 0x7E, ".{ decode_jump_cond_inc8,       .JLE_JNG,     }");
     #insert #run assign_op_info_range(0x7F, 0x7F, ".{ decode_jump_cond_inc8,       .JNLE_JG,     }");
-    #insert #run assign_op_info_range(0x8d, 0x8d, ".{ decode_load_to_reg_seg,      .LEA,         }");
-    #insert #run assign_op_info_range(0xc4, 0xc4, ".{ decode_load_to_reg_seg,      .LES,         }");
-    #insert #run assign_op_info_range(0xc5, 0xc5, ".{ decode_load_to_reg_seg,      .LDS,         }");
     #insert #run assign_op_info_range(0xE0, 0xE0, ".{ decode_jump_cond_inc8,       .LOOPNZ,      }");
     #insert #run assign_op_info_range(0xE1, 0xE1, ".{ decode_jump_cond_inc8,       .LOOPZ,       }");
     #insert #run assign_op_info_range(0xE2, 0xE2, ".{ decode_jump_cond_inc8,       .LOOP,        }");
     #insert #run assign_op_info_range(0xE3, 0xE3, ".{ decode_jump_cond_inc8,       .JCXZ,        }");
-    #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,      .INVALID,     }");
-    #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_arith_reg_with_rm,    .XCHG,        }");
-    #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                  .MOV,         }");
-    #insert #run assign_op_info_range(0x90, 0x97, ".{ decode_arith_reg_with_accum, .XCHG,        }");
+    #insert #run assign_op_info_range(0x8D, 0x8D, ".{ decode_load_to_reg_seg,      .LEA,         }");
+    #insert #run assign_op_info_range(0xC4, 0xC4, ".{ decode_load_to_reg_seg,      .LES,         }");
+    #insert #run assign_op_info_range(0xC5, 0xC5, ".{ decode_load_to_reg_seg,      .LDS,         }");
+    #insert #run assign_op_info_range(0x88, 0x8C, ".{ decode_mov,                  .MOV,         }");
+    #insert #run assign_op_info_range(0xA0, 0xA3, ".{ decode_mov_accumulator,      .MOV,         }");
+    #insert #run assign_op_info_range(0xB0, 0xBF, ".{ decode_mov_imm_to_reg,       .MOV,         }");
+    #insert #run assign_op_info_range(0xC6, 0xC7, ".{ decode_mov_imm_to_rm,        .MOV,         }");
+    #insert #run assign_op_info_range(0x27, 0x27, ".{ decode_no_operands,          .DAA,         }");
+    #insert #run assign_op_info_range(0x2F, 0x2F, ".{ decode_no_operands,          .DAS,         }");
+    #insert #run assign_op_info_range(0x37, 0x37, ".{ decode_no_operands,          .AAA,         }");
+    #insert #run assign_op_info_range(0x3F, 0x3F, ".{ decode_no_operands,          .AAS,         }");
     #insert #run assign_op_info_range(0x9C, 0x9C, ".{ decode_no_operands,          .PUSHF,       }");
     #insert #run assign_op_info_range(0x9D, 0x9D, ".{ decode_no_operands,          .POPF,        }");
     #insert #run assign_op_info_range(0x9E, 0x9E, ".{ decode_no_operands,          .SAHF,        }");
     #insert #run assign_op_info_range(0x9F, 0x9F, ".{ decode_no_operands,          .LAHF,        }");
-    #insert #run assign_op_info_range(0xFE, 0xFF, ".{ decode_unary_rm,             .INVALID,     }");
+    #insert #run assign_op_info_range(0xD7, 0xD7, ".{ decode_no_operands,          .XLAT,        }");
+    #insert #run assign_op_info_range(0x06, 0x06, ".{ decode_push_pop_seg,         .PUSH,        }");
+    #insert #run assign_op_info_range(0x07, 0x07, ".{ decode_push_pop_seg,         .POP,         }");
+    #insert #run assign_op_info_range(0x0E, 0x0E, ".{ decode_push_pop_seg,         .PUSH,        }");
+    #insert #run assign_op_info_range(0x16, 0x16, ".{ decode_push_pop_seg,         .PUSH,        }");
+    #insert #run assign_op_info_range(0x17, 0x17, ".{ decode_push_pop_seg,         .POP,         }");
+    #insert #run assign_op_info_range(0x1E, 0x1E, ".{ decode_push_pop_seg,         .PUSH,        }");
+    #insert #run assign_op_info_range(0x1F, 0x1F, ".{ decode_push_pop_seg,         .POP,         }");
+    #insert #run assign_op_info_range(0x40, 0x47, ".{ decode_unary_reg,            .INC,         }");
+    #insert #run assign_op_info_range(0x48, 0x4F, ".{ decode_unary_reg,            .DEC,         }");
     #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_unary_reg,            .PUSH,        }");
-    #insert #run assign_op_info_range(0x8F, 0x8F, ".{ decode_unary_rm,             .POP,         }");
     #insert #run assign_op_info_range(0x58, 0x5F, ".{ decode_unary_reg,            .POP,         }");
-    #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,      .MOV,         }");
-    #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,       .MOV,         }");
-    #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,        .MOV,         }");
-    #insert #run assign_op_info_range(0xd7, 0xd7, ".{ decode_no_operands,          .XLAT,        }");
-    #insert #run assign_op_info_range(0xE4, 0xE7, ".{ decode_in_out,               .INVALID,     }");
-    #insert #run assign_op_info_range(0xEC, 0xEF, ".{ decode_in_out,               .INVALID,     }");
+    #insert #run assign_op_info_range(0x8F, 0x8F, ".{ decode_unary_rm,             .INVALID,     }");
     #insert #run assign_op_info_range(0xF6, 0xF7, ".{ decode_unary_rm,             .INVALID,     }");
+    #insert #run assign_op_info_range(0xFE, 0xFF, ".{ decode_unary_rm,             .INVALID,     }");
 }
 opcode_table: Opcode_Table;
 #run (){
@@ -468,31 +468,28 @@ _decode_rm :: (head_disp: *u8, in_mode: *Memory_Mode, field_rm: u8, field_w: u8)
     return rm, advance_count;
 }
 
-decode_arith_reg_with_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
-    field_inst := (<<head       & 0b0001_0000) >> 4;
-    field_d    := (<<head       & 0b0000_0010) >> 1;
-    field_w    := (<<head       & 0b0000_0001);
-    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_reg  := (<<(head + 1) & 0b0011_1000) >> 3;
-    field_rm   := (<<(head + 1) & 0b0000_0111);
+//
+// INSTRUCTION DECODING
+//
+decode_arith_imm_to_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_inst := (<<head & 0b1111_1110) >> 1;
+    field_w    := (<<head & 0b0000_0001);
+    field_low  := <<(head + 1);
+    field_high := ifx field_w then <<(head + 2) else 0;
 
     inst: Instruction;
-    inst.mode = memory_mode(field_mod);
-    inst.desc = "Reg/memory with register to either";
+    inst.desc = "immediate to accumulator";
 
-    reg := operand_register(field_reg, field_w);
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
-
-    inst.dst = ifx field_d then reg else rm;
-    inst.src = ifx field_d then rm  else reg;
+    inst.dst = operand_register(ifx field_w then "ax" else "al");
+    inst.src = operand_immediate(field_low, field_high);
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
+        print("% %, %  ; {first_byte=0x%, inst=% w=%} (%)\n",
             mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
+            formatHex(<<head), field_inst, field_w, inst.desc);
     }
 
-    return inst, 2 + extra_advance;
+    return inst, 2 + field_w;
 }
 
 decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
@@ -541,27 +538,6 @@ decode_arith_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
     return inst, offset;
 }
 
-decode_arith_imm_to_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
-    field_inst := (<<head & 0b1111_1110) >> 1;
-    field_w    := (<<head & 0b0000_0001);
-    field_low  := <<(head + 1);
-    field_high := ifx field_w then <<(head + 2) else 0;
-
-    inst: Instruction;
-    inst.desc = "immediate to accumulator";
-
-    inst.dst = operand_register(ifx field_w then "ax" else "al");
-    inst.src = operand_immediate(field_low, field_high);
-
-    if DEBUG {
-        print("% %, %  ; {first_byte=0x%, inst=% w=%} (%)\n",
-            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_inst, field_w, inst.desc);
-    }
-
-    return inst, 2 + field_w;
-}
-
 decode_arith_reg_with_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     field_reg := <<head & 0b0000_0111;
 
@@ -577,6 +553,33 @@ decode_arith_reg_with_accum :: (op_info: *Opcode_Info, head: *u8) -> (Instructio
     }
 
     return inst, 1;
+}
+
+decode_arith_reg_with_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_inst := (<<head       & 0b0001_0000) >> 4;
+    field_d    := (<<head       & 0b0000_0010) >> 1;
+    field_w    := (<<head       & 0b0000_0001);
+    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_reg  := (<<(head + 1) & 0b0011_1000) >> 3;
+    field_rm   := (<<(head + 1) & 0b0000_0111);
+
+    inst: Instruction;
+    inst.mode = memory_mode(field_mod);
+    inst.desc = "Reg/memory with register to either";
+
+    reg := operand_register(field_reg, field_w);
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
+
+    inst.dst = ifx field_d then reg else rm;
+    inst.src = ifx field_d then rm  else reg;
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
+    }
+
+    return inst, 2 + extra_advance;
 }
 
 decode_in_out :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
@@ -661,7 +664,6 @@ decode_load_to_reg_seg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, ad
     return inst, 2 + extra_advance;
 }
 
-
 decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     field_d   := (<< head      & 0b0000_0010) >> 1;
     field_w   := (<< head      & 0b0000_0001);
@@ -686,6 +688,32 @@ decode_mov :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count:
     }
 
     return inst, 2 + extra_advance;
+}
+
+decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    inst: Instruction;
+    inst.desc = "memory to/from accumulator";
+    inst.mode = .MEM_DIRECT;
+
+    field_to_mem := (<<head & 0b10) >> 1;
+    field_w      :=  <<head & 0b01;
+
+    field_low  := <<(head + 1);
+    field_high := <<(head + 2);
+
+    reg := operand_register(ifx field_w then "ax" else "al");
+    mem := operand_memory_direct(immediate(field_low, field_high));
+
+    inst.dst = ifx field_to_mem then mem else reg;
+    inst.src = ifx field_to_mem then reg else mem;
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, to_mem=%, w=%} (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_to_mem, field_w, inst.desc);
+    }
+
+    return inst, 3;
 }
 
 decode_mov_imm_to_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
@@ -735,32 +763,6 @@ decode_mov_imm_to_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, adva
     }
 
     return inst, offset;
-}
-
-decode_mov_accumulator :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
-    inst: Instruction;
-    inst.desc = "memory to/from accumulator";
-    inst.mode = .MEM_DIRECT;
-
-    field_to_mem := (<<head & 0b10) >> 1;
-    field_w      :=  <<head & 0b01;
-
-    field_low  := <<(head + 1);
-    field_high := <<(head + 2);
-
-    reg := operand_register(ifx field_w then "ax" else "al");
-    mem := operand_memory_direct(immediate(field_low, field_high));
-
-    inst.dst = ifx field_to_mem then mem else reg;
-    inst.src = ifx field_to_mem then reg else mem;
-
-    if DEBUG {
-        print("% %, %  ; {first_byte=0x%, to_mem=%, w=%} (%)\n",
-            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_to_mem, field_w, inst.desc);
-    }
-
-    return inst, 3;
 }
 
 decode_no_operands :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
@@ -849,6 +851,9 @@ decode_unary_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_c
     return inst, 2 + extra_advance;
 }
 
+//
+// ENTRYPOINTS
+//
 decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
     opcode := (0b1111_1111 & (<<head));
     assert(opcode < opcode_table.ops.count);
