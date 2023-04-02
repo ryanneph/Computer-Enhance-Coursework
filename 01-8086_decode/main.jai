@@ -86,6 +86,7 @@ Instruction_Type :: enum u32 {
     LOOP;         // @mnemonic:loop
     LOOPZ;        // @mnemonic:loopz
     LOOPNZ;       // @mnemonic:loopnz
+    NEG;          // @mnemonic:neg
     JCXZ;         // @mnemonic:jcxz
     SBB;          // @mnemonic:sbb
     SUB;          // @mnemonic:sub
@@ -135,6 +136,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.LOOP]        = "loop";
     strings[Instruction_Type.LOOPZ]       = "loopz";
     strings[Instruction_Type.LOOPNZ]      = "loopnz";
+    strings[Instruction_Type.NEG]         = "neg";
     strings[Instruction_Type.JCXZ]        = "jcxz";
     strings[Instruction_Type.SBB]         = "sbb";
     strings[Instruction_Type.SUB]         = "sub";
@@ -257,6 +259,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xd7, 0xd7, ".{ decode_no_operands,          .XLAT,        }");
     #insert #run assign_op_info_range(0xE4, 0xE7, ".{ decode_in_out,               .INVALID,     }");
     #insert #run assign_op_info_range(0xEC, 0xEF, ".{ decode_in_out,               .INVALID,     }");
+    #insert #run assign_op_info_range(0xF6, 0xF7, ".{ decode_unary_rm,             .INVALID,     }");
 }
 opcode_table: Opcode_Table;
 #run (){
@@ -825,6 +828,8 @@ decode_unary_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_c
             op_info.type = .INC;
         case 0b1111_001;
             op_info.type = .DEC;
+        case 0b1111_011;
+            op_info.type = .NEG;
         case 0b1111_110;
             op_info.type = .PUSH;
         case 0b1000_000;
