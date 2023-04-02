@@ -58,6 +58,8 @@ Instruction_Type :: enum u32 {
     ADD;          // @mnemonic:add
     CMP;          // @mnemonic:cmp
     IN;           // @mnemonic:in
+    INC;          // @mnemonic:inc
+    DEC;          // @mnemonic:dec
     JO;           // @mnemonic:jo
     JNO;          // @mnemonic:jno
     JB_JNAE_JC;   // @mnemonic:jb
@@ -100,6 +102,8 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.ADC]         = "adc";
     strings[Instruction_Type.CMP]         = "cmp";
     strings[Instruction_Type.IN]          = "in";
+    strings[Instruction_Type.INC]         = "inc";
+    strings[Instruction_Type.DEC]         = "dec";
     strings[Instruction_Type.JO]          = "jo";
     strings[Instruction_Type.JNO]         = "jno";
     strings[Instruction_Type.JB_JNAE_JC]  = "jb";
@@ -194,6 +198,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum, .SUB,         }");
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,  .CMP,         }");
     #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum, .CMP,         }");
+    #insert #run assign_op_info_range(0x40, 0x47, ".{ decode_unary_reg,          .INC,         }");
+    #insert #run assign_op_info_range(0x48, 0x4F, ".{ decode_unary_reg,          .DEC,         }");
     #insert #run assign_op_info_range(0x70, 0x70, ".{ decode_jump_cond_inc8,     .JO,          }");
     #insert #run assign_op_info_range(0x71, 0x71, ".{ decode_jump_cond_inc8,     .JNO,         }");
     #insert #run assign_op_info_range(0x72, 0x72, ".{ decode_jump_cond_inc8,     .JB_JNAE_JC,  }");
@@ -225,10 +231,10 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x9D, 0x9D, ".{ decode_no_operands,        .POPF,        }");
     #insert #run assign_op_info_range(0x9E, 0x9E, ".{ decode_no_operands,        .SAHF,        }");
     #insert #run assign_op_info_range(0x9F, 0x9F, ".{ decode_no_operands,        .LAHF,        }");
-    #insert #run assign_op_info_range(0xFF, 0xFF, ".{ decode_push_pop_rm,        .PUSH,        }");
-    #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_push_pop_reg,       .PUSH,        }");
-    #insert #run assign_op_info_range(0x8F, 0x8F, ".{ decode_push_pop_rm,        .POP,         }");
-    #insert #run assign_op_info_range(0x58, 0x5F, ".{ decode_push_pop_reg,       .POP,         }");
+    #insert #run assign_op_info_range(0xFE, 0xFF, ".{ decode_unary_rm,           .INVALID,     }");
+    #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_unary_reg,          .PUSH,        }");
+    #insert #run assign_op_info_range(0x8F, 0x8F, ".{ decode_unary_rm,           .POP,         }");
+    #insert #run assign_op_info_range(0x58, 0x5F, ".{ decode_unary_reg,          .POP,         }");
     #insert #run assign_op_info_range(0xa0, 0xa3, ".{ decode_mov_accumulator,    .MOV,         }");
     #insert #run assign_op_info_range(0xb0, 0xbf, ".{ decode_mov_imm_to_reg,     .MOV,         }");
     #insert #run assign_op_info_range(0xc6, 0xc7, ".{ decode_mov_imm_to_rm,      .MOV,         }");
@@ -748,29 +754,25 @@ decode_no_operands :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advanc
     return inst, 1;
 }
 
-decode_push_pop_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
-    field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_rm  := (<<(head + 1) & 0b0000_0111);
+decode_push_pop_seg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_seg := (<<(head) & 0b0001_1000) >> 3;
 
     inst: Instruction;
-    inst.desc = "register or memory to/from stack";
-    inst.mode = memory_mode(field_mod);
+    inst.desc = "segment register to/from stack";
     inst.operand_count = .UNARY;
 
-    rm, advance_extra := _decode_rm(head + 2, *inst.mode, field_rm, 1);
-    inst.dst = rm;
-    inst.dst.size = .WORD;
+    inst.dst = operand_segment(field_seg);
 
     if DEBUG {
-        print("% %  ; {first_byte=0x%, mod=% rm=%} (%)\n",
+        print("% %  ; {first_byte=0x%, seg=%} (%)\n",
             mnemonic_string(op_info.type), operand_to_string(inst, inst.dst),
-            formatHex(<<head), field_mod, field_rm, inst.desc);
+            formatHex(<<head), field_seg, inst.desc);
     }
 
-    return inst, 2 + advance_extra;
+    return inst, 1;
 }
 
-decode_push_pop_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+decode_unary_reg ::    (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
     field_reg := (<<(head) & 0b0000_0111);
 
     inst: Instruction;
@@ -788,22 +790,40 @@ decode_push_pop_reg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advan
     return inst, 1;
 }
 
-decode_push_pop_seg :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
-    field_seg := (<<(head) & 0b0001_1000) >> 3;
+decode_unary_rm :: (op_info: *Opcode_Info, head: *u8) -> (Instruction, advance_count: s32) {
+    field_w     :=  << head      & 0b0000_0001;
+    field_mod   := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_inst1 := (<< head      & 0b1111_0000) >> 1;
+    field_inst2 := (<<(head + 1) & 0b0011_1000) >> 3;
+    field_rm    := (<<(head + 1) & 0b0000_0111);
 
     inst: Instruction;
-    inst.desc = "segment register to/from stack";
+    inst.desc = "increment register/memory";
     inst.operand_count = .UNARY;
+    inst.mode = memory_mode(field_mod);
 
-    inst.dst = operand_segment(field_seg);
-
-    if DEBUG {
-        print("% %  ; {first_byte=0x%, seg=%} (%)\n",
-            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst),
-            formatHex(<<head), field_seg, inst.desc);
+    if (field_inst2 | field_inst1) == {
+        case 0b1111_000;
+            op_info.type = .INC;
+        case 0b1111_001;
+            op_info.type = .DEC;
+        case 0b1111_110;
+            op_info.type = .PUSH;
+        case 0b1000_000;
+            op_info.type = .POP;
     }
 
-    return inst, 1;
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
+    inst.dst = rm;
+    inst.dst.size = ifx field_w then Operand_Size.WORD else .BYTE;
+
+    if DEBUG {
+        print("% %  ; {first_byte=0x%, w=% mod=% rm=%} (%)\n",
+            mnemonic_string(op_info.type), operand_to_string(inst, inst.dst),
+            formatHex(<<head), field_w, field_mod, field_rm, inst.desc);
+    }
+
+    return inst, 2 + extra_advance;
 }
 
 decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
