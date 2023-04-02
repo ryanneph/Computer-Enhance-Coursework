@@ -54,9 +54,13 @@ Operand :: struct {
 // TODO(ryan): Hook the compilation-loop and populate the matched-index table automatically
 Instruction_Type :: enum u32 {
     INVALID :: 0;
+    AAA;          // @mnemonic:aaa
+    AAS;          // @mnemonic:aas
     ADC;          // @mnemonic:adc
     ADD;          // @mnemonic:add
     CMP;          // @mnemonic:cmp
+    DAA;          // @mnemonic:daa
+    DAS;          // @mnemonic:das
     IN;           // @mnemonic:in
     INC;          // @mnemonic:inc
     DEC;          // @mnemonic:dec
@@ -98,9 +102,13 @@ Instruction_Type :: enum u32 {
 }
 Mnemonic_Table :: struct {
     strings: [Instruction_Type._ENUM_COUNT]string;
+    strings[Instruction_Type.AAA]         = "aaa";
+    strings[Instruction_Type.AAS]         = "aas";
     strings[Instruction_Type.ADD]         = "add";
     strings[Instruction_Type.ADC]         = "adc";
     strings[Instruction_Type.CMP]         = "cmp";
+    strings[Instruction_Type.DAA]         = "daa";
+    strings[Instruction_Type.DAS]         = "das";
     strings[Instruction_Type.IN]          = "in";
     strings[Instruction_Type.INC]         = "inc";
     strings[Instruction_Type.DEC]         = "dec";
@@ -194,10 +202,14 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x17, 0x17, ".{ decode_push_pop_seg,       .POP,         }");
     #insert #run assign_op_info_range(0x1E, 0x1E, ".{ decode_push_pop_seg,       .PUSH,        }");
     #insert #run assign_op_info_range(0x1F, 0x1F, ".{ decode_push_pop_seg,       .POP,         }");
+    #insert #run assign_op_info_range(0x27, 0x27, ".{ decode_no_operands,        .DAA,         }");
     #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_arith_reg_with_rm,  .SUB,         }");
     #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum, .SUB,         }");
+    #insert #run assign_op_info_range(0x2F, 0x2F, ".{ decode_no_operands,        .DAS,         }");
+    #insert #run assign_op_info_range(0x37, 0x37, ".{ decode_no_operands,        .AAA,         }");
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,  .CMP,         }");
     #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum, .CMP,         }");
+    #insert #run assign_op_info_range(0x3F, 0x3F, ".{ decode_no_operands,        .AAS,         }");
     #insert #run assign_op_info_range(0x40, 0x47, ".{ decode_unary_reg,          .INC,         }");
     #insert #run assign_op_info_range(0x48, 0x4F, ".{ decode_unary_reg,          .DEC,         }");
     #insert #run assign_op_info_range(0x70, 0x70, ".{ decode_jump_cond_inc8,     .JO,          }");
