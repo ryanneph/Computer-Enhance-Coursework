@@ -86,6 +86,10 @@ Instruction_Type :: enum u32 {
     OUT;          // @mnemonic:out
     PUSH;         // @mnemonic:push
     POP;          // @mnemonic:pop
+    LAHF;         // @mnemonic:lahf
+    SAHF;         // @mnemonic:sahf
+    PUSHF;        // @mnemonic:pushf
+    POPF;         // @mnemonic:popf
     XCHG;         // @mnemonic:xchg
     XLAT;         // @mnemonic:xlat
     _ENUM_COUNT;
@@ -124,6 +128,10 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.OUT]         = "out";
     strings[Instruction_Type.PUSH]        = "push";
     strings[Instruction_Type.POP]         = "pop";
+    strings[Instruction_Type.LAHF]        = "lahf";
+    strings[Instruction_Type.SAHF]        = "sahf";
+    strings[Instruction_Type.PUSHF]       = "pushf";
+    strings[Instruction_Type.POPF]        = "popf";
     strings[Instruction_Type.XCHG]        = "xchg";
     strings[Instruction_Type.XLAT]        = "xlat";
 }
@@ -213,6 +221,10 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_arith_reg_with_rm,  .XCHG,        }");
     #insert #run assign_op_info_range(0x88, 0x8c, ".{ decode_mov,                .MOV,         }");
     #insert #run assign_op_info_range(0x90, 0x97, ".{ decode_arith_reg_with_accum, .XCHG,      }");
+    #insert #run assign_op_info_range(0x9C, 0x9C, ".{ decode_no_operands,        .PUSHF,       }");
+    #insert #run assign_op_info_range(0x9D, 0x9D, ".{ decode_no_operands,        .POPF,        }");
+    #insert #run assign_op_info_range(0x9E, 0x9E, ".{ decode_no_operands,        .SAHF,        }");
+    #insert #run assign_op_info_range(0x9F, 0x9F, ".{ decode_no_operands,        .LAHF,        }");
     #insert #run assign_op_info_range(0xFF, 0xFF, ".{ decode_push_pop_rm,        .PUSH,        }");
     #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_push_pop_reg,       .PUSH,        }");
     #insert #run assign_op_info_range(0x8F, 0x8F, ".{ decode_push_pop_rm,        .POP,         }");
