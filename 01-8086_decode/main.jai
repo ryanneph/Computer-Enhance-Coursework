@@ -204,26 +204,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x90, 0x97, ".{ decode_arith_reg_with_accum, .XCHG,        }");
     #insert #run assign_op_info_range(0xE4, 0xE7, ".{ decode_in_out,               .INVALID,     }");
     #insert #run assign_op_info_range(0xEC, 0xEF, ".{ decode_in_out,               .INVALID,     }");
-    #insert #run assign_op_info_range(0x70, 0x70, ".{ decode_jump_cond_inc8,       .JO,          }");
-    #insert #run assign_op_info_range(0x71, 0x71, ".{ decode_jump_cond_inc8,       .JNO,         }");
-    #insert #run assign_op_info_range(0x72, 0x72, ".{ decode_jump_cond_inc8,       .JB_JNAE_JC,  }");
-    #insert #run assign_op_info_range(0x73, 0x73, ".{ decode_jump_cond_inc8,       .JNB_JAE_JNC, }");
-    #insert #run assign_op_info_range(0x74, 0x74, ".{ decode_jump_cond_inc8,       .JE_JZ,       }");
-    #insert #run assign_op_info_range(0x75, 0x75, ".{ decode_jump_cond_inc8,       .JNE_JNZ,     }");
-    #insert #run assign_op_info_range(0x76, 0x76, ".{ decode_jump_cond_inc8,       .JBE_JNA,     }");
-    #insert #run assign_op_info_range(0x77, 0x77, ".{ decode_jump_cond_inc8,       .JNBE_JA,     }");
-    #insert #run assign_op_info_range(0x78, 0x78, ".{ decode_jump_cond_inc8,       .JS,          }");
-    #insert #run assign_op_info_range(0x79, 0x79, ".{ decode_jump_cond_inc8,       .JNS,         }");
-    #insert #run assign_op_info_range(0x7A, 0x7A, ".{ decode_jump_cond_inc8,       .JP_JPE,      }");
-    #insert #run assign_op_info_range(0x7B, 0x7B, ".{ decode_jump_cond_inc8,       .JNP_JPO,     }");
-    #insert #run assign_op_info_range(0x7C, 0x7C, ".{ decode_jump_cond_inc8,       .JL_JNGE,     }");
-    #insert #run assign_op_info_range(0x7D, 0x7D, ".{ decode_jump_cond_inc8,       .JNL_JGE,     }");
-    #insert #run assign_op_info_range(0x7E, 0x7E, ".{ decode_jump_cond_inc8,       .JLE_JNG,     }");
-    #insert #run assign_op_info_range(0x7F, 0x7F, ".{ decode_jump_cond_inc8,       .JNLE_JG,     }");
-    #insert #run assign_op_info_range(0xE0, 0xE0, ".{ decode_jump_cond_inc8,       .LOOPNZ,      }");
-    #insert #run assign_op_info_range(0xE1, 0xE1, ".{ decode_jump_cond_inc8,       .LOOPZ,       }");
-    #insert #run assign_op_info_range(0xE2, 0xE2, ".{ decode_jump_cond_inc8,       .LOOP,        }");
-    #insert #run assign_op_info_range(0xE3, 0xE3, ".{ decode_jump_cond_inc8,       .JCXZ,        }");
+    #insert #run assign_op_info_range(0x70, 0x7F, ".{ decode_jump_cond_inc8,       .INVALID,     }");
+    #insert #run assign_op_info_range(0xE0, 0xE3, ".{ decode_jump_cond_inc8,       .INVALID,     }");
     #insert #run assign_op_info_range(0x8D, 0x8D, ".{ decode_load_to_reg_seg,      .LEA,         }");
     #insert #run assign_op_info_range(0xC4, 0xC4, ".{ decode_load_to_reg_seg,      .LES,         }");
     #insert #run assign_op_info_range(0xC5, 0xC5, ".{ decode_load_to_reg_seg,      .LDS,         }");
@@ -584,7 +566,42 @@ decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 }
 
 decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    field_inst1 := <<head & 0b1000_0000; // found a bit that is 0 for first 8, 1 for next 4
+    field_inst2 := <<head & 0b0000_1111;
+
+    // NOTE(ryan): it would more performant to encode the instruction type into the main opcode
+    // table, since it is entirely determined by the first byte, and that is what addresses the
+    // main opcode table. For now it is here to demonstrate the pattern, I guess.
+    field_inst  := (field_inst1 >> 3) | field_inst2;
+    jump_inst_table :: Instruction_Type.[
+        // 0b0000_****
+        .JO,
+        .JNO,
+        .JB_JNAE_JC,
+        .JNB_JAE_JNC,
+        .JE_JZ,
+        .JNE_JNZ,
+        .JBE_JNA,
+        .JNBE_JA,
+        .JS,
+        .JNS,
+        .JP_JPE,
+        .JNP_JPO,
+        .JL_JNGE,
+        .JNL_JGE,
+        .JLE_JNG,
+        .JNLE_JG,
+
+        // 0b0001_****
+        .LOOPNZ,
+        .LOOPZ,
+        .LOOP,
+        .JCXZ,
+    ];
+    assert(field_inst < jump_inst_table.count);
+
     inst.operand_count = .UNARY;
+    inst.type = jump_inst_table[field_inst];
     inst.desc = "jump short (8-bit) if condition is met";
     inst.dst = operand_increment(<<(head +1));
 
