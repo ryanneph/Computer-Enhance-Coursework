@@ -61,43 +61,43 @@ Instruction_Type :: enum u32 {
     CMP;          // @mnemonic:cmp
     DAA;          // @mnemonic:daa
     DAS;          // @mnemonic:das
+    DEC;          // @mnemonic:dec
     IN;           // @mnemonic:in
     INC;          // @mnemonic:inc
-    DEC;          // @mnemonic:dec
-    JO;           // @mnemonic:jo
-    JNO;          // @mnemonic:jno
-    JB_JNAE_JC;   // @mnemonic:jb
-    JNB_JAE_JNC;  // @mnemonic:jnb
-    JE_JZ;        // @mnemonic:je
-    JNE_JNZ;      // @mnemonic:jne
     JBE_JNA;      // @mnemonic:jbe
-    JNBE_JA;      // @mnemonic:ja
-    JS;           // @mnemonic:js
-    JNS;          // @mnemonic:jns
-    JP_JPE;       // @mnemonic:jp
-    JNP_JPO;      // @mnemonic:jnp
-    JL_JNGE;      // @mnemonic:jl
-    JNL_JGE;      // @mnemonic:jge
+    JB_JNAE_JC;   // @mnemonic:jb
+    JCXZ;         // @mnemonic:jcxz
+    JE_JZ;        // @mnemonic:je
     JLE_JNG;      // @mnemonic:jle
+    JL_JNGE;      // @mnemonic:jl
+    JNBE_JA;      // @mnemonic:ja
+    JNB_JAE_JNC;  // @mnemonic:jnb
+    JNE_JNZ;      // @mnemonic:jne
     JNLE_JG;      // @mnemonic:jg
+    JNL_JGE;      // @mnemonic:jge
+    JNO;          // @mnemonic:jno
+    JNP_JPO;      // @mnemonic:jnp
+    JNS;          // @mnemonic:jns
+    JO;           // @mnemonic:jo
+    JP_JPE;       // @mnemonic:jp
+    JS;           // @mnemonic:js
+    LAHF;         // @mnemonic:lahf
     LDS;          // @mnemonic:lds
     LEA;          // @mnemonic:lea
     LES;          // @mnemonic:les
     LOOP;         // @mnemonic:loop
-    LOOPZ;        // @mnemonic:loopz
     LOOPNZ;       // @mnemonic:loopnz
+    LOOPZ;        // @mnemonic:loopz
+    MOV;          // @mnemonic:mov
     NEG;          // @mnemonic:neg
-    JCXZ;         // @mnemonic:jcxz
+    OUT;          // @mnemonic:out
+    POP;          // @mnemonic:pop
+    POPF;         // @mnemonic:popf
+    PUSH;         // @mnemonic:push
+    PUSHF;        // @mnemonic:pushf
+    SAHF;         // @mnemonic:sahf
     SBB;          // @mnemonic:sbb
     SUB;          // @mnemonic:sub
-    MOV;          // @mnemonic:mov
-    OUT;          // @mnemonic:out
-    PUSH;         // @mnemonic:push
-    POP;          // @mnemonic:pop
-    LAHF;         // @mnemonic:lahf
-    SAHF;         // @mnemonic:sahf
-    PUSHF;        // @mnemonic:pushf
-    POPF;         // @mnemonic:popf
     XCHG;         // @mnemonic:xchg
     XLAT;         // @mnemonic:xlat
     _ENUM_COUNT;
@@ -106,48 +106,48 @@ Mnemonic_Table :: struct {
     strings: [Instruction_Type._ENUM_COUNT]string;
     strings[Instruction_Type.AAA]         = "aaa";
     strings[Instruction_Type.AAS]         = "aas";
-    strings[Instruction_Type.ADD]         = "add";
     strings[Instruction_Type.ADC]         = "adc";
+    strings[Instruction_Type.ADD]         = "add";
     strings[Instruction_Type.CMP]         = "cmp";
     strings[Instruction_Type.DAA]         = "daa";
     strings[Instruction_Type.DAS]         = "das";
-    strings[Instruction_Type.IN]          = "in";
-    strings[Instruction_Type.INC]         = "inc";
     strings[Instruction_Type.DEC]         = "dec";
-    strings[Instruction_Type.JO]          = "jo";
-    strings[Instruction_Type.JNO]         = "jno";
-    strings[Instruction_Type.JB_JNAE_JC]  = "jb";
-    strings[Instruction_Type.JNB_JAE_JNC] = "jnb";
-    strings[Instruction_Type.JE_JZ]       = "je";
-    strings[Instruction_Type.JNE_JNZ]     = "jne";
+    strings[Instruction_Type.INC]         = "inc";
+    strings[Instruction_Type.IN]          = "in";
     strings[Instruction_Type.JBE_JNA]     = "jbe";
-    strings[Instruction_Type.JNBE_JA]     = "ja";
-    strings[Instruction_Type.JS]          = "js";
-    strings[Instruction_Type.JNS]         = "jns";
-    strings[Instruction_Type.JP_JPE]      = "jp";
-    strings[Instruction_Type.JNP_JPO]     = "jnp";
-    strings[Instruction_Type.JL_JNGE]     = "jl";
-    strings[Instruction_Type.JNL_JGE]     = "jge";
+    strings[Instruction_Type.JB_JNAE_JC]  = "jb";
+    strings[Instruction_Type.JCXZ]        = "jcxz";
+    strings[Instruction_Type.JE_JZ]       = "je";
     strings[Instruction_Type.JLE_JNG]     = "jle";
+    strings[Instruction_Type.JL_JNGE]     = "jl";
+    strings[Instruction_Type.JNBE_JA]     = "ja";
+    strings[Instruction_Type.JNB_JAE_JNC] = "jnb";
+    strings[Instruction_Type.JNE_JNZ]     = "jne";
     strings[Instruction_Type.JNLE_JG]     = "jg";
+    strings[Instruction_Type.JNL_JGE]     = "jge";
+    strings[Instruction_Type.JNO]         = "jno";
+    strings[Instruction_Type.JNP_JPO]     = "jnp";
+    strings[Instruction_Type.JNS]         = "jns";
+    strings[Instruction_Type.JO]          = "jo";
+    strings[Instruction_Type.JP_JPE]      = "jp";
+    strings[Instruction_Type.JS]          = "js";
+    strings[Instruction_Type.LAHF]        = "lahf";
     strings[Instruction_Type.LDS]         = "lds";
     strings[Instruction_Type.LEA]         = "lea";
     strings[Instruction_Type.LES]         = "les";
-    strings[Instruction_Type.LOOP]        = "loop";
-    strings[Instruction_Type.LOOPZ]       = "loopz";
     strings[Instruction_Type.LOOPNZ]      = "loopnz";
+    strings[Instruction_Type.LOOPZ]       = "loopz";
+    strings[Instruction_Type.LOOP]        = "loop";
+    strings[Instruction_Type.MOV]         = "mov";
     strings[Instruction_Type.NEG]         = "neg";
-    strings[Instruction_Type.JCXZ]        = "jcxz";
+    strings[Instruction_Type.OUT]         = "out";
+    strings[Instruction_Type.POPF]        = "popf";
+    strings[Instruction_Type.POP]         = "pop";
+    strings[Instruction_Type.PUSHF]       = "pushf";
+    strings[Instruction_Type.PUSH]        = "push";
+    strings[Instruction_Type.SAHF]        = "sahf";
     strings[Instruction_Type.SBB]         = "sbb";
     strings[Instruction_Type.SUB]         = "sub";
-    strings[Instruction_Type.MOV]         = "mov";
-    strings[Instruction_Type.OUT]         = "out";
-    strings[Instruction_Type.PUSH]        = "push";
-    strings[Instruction_Type.POP]         = "pop";
-    strings[Instruction_Type.LAHF]        = "lahf";
-    strings[Instruction_Type.SAHF]        = "sahf";
-    strings[Instruction_Type.PUSHF]       = "pushf";
-    strings[Instruction_Type.POPF]        = "popf";
     strings[Instruction_Type.XCHG]        = "xchg";
     strings[Instruction_Type.XLAT]        = "xlat";
 }
