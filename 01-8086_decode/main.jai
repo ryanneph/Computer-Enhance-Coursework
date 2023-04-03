@@ -202,12 +202,6 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum,   .CMP,         }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,      .INVALID,     }");
     #insert #run assign_op_info_range(0x90, 0x97, ".{ decode_arith_reg_with_accum, .XCHG,        }");
-    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_arith_reg_with_rm,    .ADD,         }");
-    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_arith_reg_with_rm,    .ADC,         }");
-    #insert #run assign_op_info_range(0x18, 0x1B, ".{ decode_arith_reg_with_rm,    .SBB,         }");
-    #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_arith_reg_with_rm,    .SUB,         }");
-    #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_arith_reg_with_rm,    .CMP,         }");
-    #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_arith_reg_with_rm,    .XCHG,        }");
     #insert #run assign_op_info_range(0xE4, 0xE7, ".{ decode_in_out,               .INVALID,     }");
     #insert #run assign_op_info_range(0xEC, 0xEF, ".{ decode_in_out,               .INVALID,     }");
     #insert #run assign_op_info_range(0x70, 0x70, ".{ decode_jump_cond_inc8,       .JO,          }");
@@ -233,7 +227,6 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x8D, 0x8D, ".{ decode_load_to_reg_seg,      .LEA,         }");
     #insert #run assign_op_info_range(0xC4, 0xC4, ".{ decode_load_to_reg_seg,      .LES,         }");
     #insert #run assign_op_info_range(0xC5, 0xC5, ".{ decode_load_to_reg_seg,      .LDS,         }");
-    #insert #run assign_op_info_range(0x88, 0x8C, ".{ decode_mov,                  .MOV,         }");
     #insert #run assign_op_info_range(0xA0, 0xA3, ".{ decode_mov_accumulator,      .MOV,         }");
     #insert #run assign_op_info_range(0xB0, 0xBF, ".{ decode_mov_imm_to_reg,       .MOV,         }");
     #insert #run assign_op_info_range(0xC6, 0xC7, ".{ decode_mov_imm_to_rm,        .MOV,         }");
@@ -253,6 +246,13 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x17, 0x17, ".{ decode_push_pop_seg,         .POP,         }");
     #insert #run assign_op_info_range(0x1E, 0x1E, ".{ decode_push_pop_seg,         .PUSH,        }");
     #insert #run assign_op_info_range(0x1F, 0x1F, ".{ decode_push_pop_seg,         .POP,         }");
+    #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_reg_with_rm,          .ADD,         }");
+    #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_reg_with_rm,          .ADC,         }");
+    #insert #run assign_op_info_range(0x18, 0x1B, ".{ decode_reg_with_rm,          .SBB,         }");
+    #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_reg_with_rm,          .SUB,         }");
+    #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_reg_with_rm,          .CMP,         }");
+    #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_reg_with_rm,          .XCHG,        }");
+    #insert #run assign_op_info_range(0x88, 0x8C, ".{ decode_reg_with_rm,          .MOV,         }");
     #insert #run assign_op_info_range(0x40, 0x47, ".{ decode_unary_reg,            .INC,         }");
     #insert #run assign_op_info_range(0x48, 0x4F, ".{ decode_unary_reg,            .DEC,         }");
     #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_unary_reg,            .PUSH,        }");
@@ -552,32 +552,6 @@ decode_arith_reg_with_accum :: (inst: *Instruction, head: *u8) -> (advance_count
     return 1;
 }
 
-decode_arith_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_inst := (<<head       & 0b0001_0000) >> 4;
-    field_d    := (<<head       & 0b0000_0010) >> 1;
-    field_w    := (<<head       & 0b0000_0001);
-    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_reg  := (<<(head + 1) & 0b0011_1000) >> 3;
-    field_rm   := (<<(head + 1) & 0b0000_0111);
-
-    inst.mode = memory_mode(field_mod);
-    inst.desc = "Reg/memory with register to either";
-
-    reg := operand_register(field_reg, field_w);
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
-
-    inst.dst = ifx field_d then reg else rm;
-    inst.src = ifx field_d then rm  else reg;
-
-    if DEBUG {
-        print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
-    }
-
-    return 2 + extra_advance;
-}
-
 decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_fv   := (<<head & 0b0000_1000) >> 3; // fixed:0, variable:1
     field_inst := (<<head & 0b0000_0010) >> 1; // IN:0, OUT:1
@@ -652,31 +626,6 @@ decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32
         print("% %, % ; (%)\n",
             mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
             inst.desc);
-    }
-
-    return 2 + extra_advance;
-}
-
-decode_mov :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_d   := (<< head      & 0b0000_0010) >> 1;
-    field_w   := (<< head      & 0b0000_0001);
-    field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_reg := (<<(head + 1) & 0b0011_1000) >> 3;
-    field_rm  := (<<(head + 1) & 0b0000_0111);
-
-    inst.desc = "register/memory to/from register";
-    inst.mode = memory_mode(field_mod);
-
-    reg := operand_register(field_reg, field_w);
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
-
-    inst.src  = ifx field_d then rm  else reg;
-    inst.dst  = ifx field_d then reg else rm;
-
-    if DEBUG {
-        print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
     }
 
     return 2 + extra_advance;
@@ -780,6 +729,31 @@ decode_no_operands :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     }
 
     return 1;
+}
+
+decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    field_d    := (<<head       & 0b0000_0010) >> 1;
+    field_w    := (<<head       & 0b0000_0001);
+    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_reg  := (<<(head + 1) & 0b0011_1000) >> 3;
+    field_rm   := (<<(head + 1) & 0b0000_0111);
+
+    inst.mode = memory_mode(field_mod);
+    inst.desc = "Reg/memory with register to either";
+
+    reg := operand_register(field_reg, field_w);
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
+
+    inst.dst = ifx field_d then reg else rm;
+    inst.src = ifx field_d then rm  else reg;
+
+    if DEBUG {
+        print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
+            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
+    }
+
+    return 2 + extra_advance;
 }
 
 decode_unary_reg ::    (inst: *Instruction, head: *u8) -> (advance_count: s32) {
