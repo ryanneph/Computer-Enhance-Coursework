@@ -98,13 +98,21 @@ Instruction_Type :: enum u32 {
     MOV;          // @mnemonic:mov
     MUL;          // @mnemonic:mul
     NEG;          // @mnemonic:neg
+    NOT;          // @mnemonic:not
     OUT;          // @mnemonic:out
     POP;          // @mnemonic:pop
     POPF;         // @mnemonic:popf
     PUSH;         // @mnemonic:push
     PUSHF;        // @mnemonic:pushf
+    RCL;          // @mnemonic:rcl
+    RCR;          // @mnemonic:rcr
+    ROL;          // @mnemonic:rol
+    ROR;          // @mnemonic:ror
     SAHF;         // @mnemonic:sahf
+    SAR;          // @mnemonic:sar
     SBB;          // @mnemonic:sbb
+    SHL;          // @mnemonic:shl
+    SHR;          // @mnemonic:shr
     SUB;          // @mnemonic:sub
     XCHG;         // @mnemonic:xchg
     XLAT;         // @mnemonic:xlat
@@ -156,13 +164,21 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.MOV]         = "mov";
     strings[Instruction_Type.MUL]         = "mul";
     strings[Instruction_Type.NEG]         = "neg";
+    strings[Instruction_Type.NOT]         = "not";
     strings[Instruction_Type.OUT]         = "out";
     strings[Instruction_Type.POPF]        = "popf";
     strings[Instruction_Type.POP]         = "pop";
     strings[Instruction_Type.PUSHF]       = "pushf";
     strings[Instruction_Type.PUSH]        = "push";
+    strings[Instruction_Type.RCL]         = "rcl";
+    strings[Instruction_Type.RCR]         = "rcr";
+    strings[Instruction_Type.ROL]         = "rol";
+    strings[Instruction_Type.ROR]         = "ror";
     strings[Instruction_Type.SAHF]        = "sahf";
+    strings[Instruction_Type.SAR]         = "sar";
     strings[Instruction_Type.SBB]         = "sbb";
+    strings[Instruction_Type.SHL]         = "shl";
+    strings[Instruction_Type.SHR]         = "shr";
     strings[Instruction_Type.SUB]         = "sub";
     strings[Instruction_Type.XCHG]        = "xchg";
     strings[Instruction_Type.XLAT]        = "xlat";
@@ -218,6 +234,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum,   .CMP,         }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,      .INVALID,     }");
     #insert #run assign_op_info_range(0x90, 0x97, ".{ decode_arith_reg_with_accum, .XCHG,        }");
+    #insert #run assign_op_info_range(0xD0, 0xD3, ".{ decode_bit_ops,              .INVALID,     }");
     #insert #run assign_op_info_range(0xE4, 0xE7, ".{ decode_in_out,               .INVALID,     }");
     #insert #run assign_op_info_range(0xEC, 0xEF, ".{ decode_in_out,               .INVALID,     }");
     #insert #run assign_op_info_range(0x70, 0x7F, ".{ decode_jump_cond_inc8,       .INVALID,     }");
@@ -519,6 +536,7 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
             inst.type = .CMP;
         case; assert(false, "% NOT IMPLEMENTED", field_inst);
     }
+    assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
     offset: s32 = 2;
     rm, extra_advance := _decode_rm(head + offset, *inst.mode, field_rm, field_w);
@@ -552,6 +570,45 @@ decode_arith_reg_with_accum :: (inst: *Instruction, head: *u8) -> (advance_count
     }
 
     return 1;
+}
+
+decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    field_v    := (<< head      & 0b0000_0010) >> 1; // 0: src is 1, 1: src is "cl" register
+    field_w    := (<< head      & 0b0000_0001);
+    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_inst := (<<(head + 1) & 0b0011_1000) >> 3;
+    field_rm   := (<<(head + 1) & 0b0000_0111);
+
+    inst_table ::  Instruction_Type.[
+        .ROL,
+        .ROR,
+        .RCL,
+        .RCR,
+        .SHL,
+        .SHR,
+        .INVALID,
+        .SAR,
+    ];
+
+    assert(field_inst < inst_table.count);
+    inst.type = inst_table[field_inst];
+    assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
+
+    inst.mode = memory_mode(field_mod);
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
+
+    inst.desc = "bit manipulation of register/memory by 1 or value in cl register";
+    inst.src = ifx !field_v then operand_immediate(1) else operand_register("cl");
+    inst.dst = rm;
+    inst.dst.size = ifx field_w then Operand_Size.WORD else .BYTE;
+
+    if DEBUG {
+        print("% %, % ; {first_byte=0x%, v=% w=%, mod=% inst=% rm=%} (%)\n",
+            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
+            formatHex(<<head), field_v, field_w, field_mod, field_inst, field_rm, inst.desc);
+    }
+
+    return 2 + extra_advance;
 }
 
 decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
@@ -618,11 +675,14 @@ decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
         .LOOP,
         .JCXZ,
     ];
-    assert(field_inst < jump_inst_table.count);
 
-    inst.operand_count = .UNARY;
+    assert(field_inst < jump_inst_table.count);
     inst.type = jump_inst_table[field_inst];
+    assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
+
     inst.desc = "jump short (8-bit) if condition is met";
+    inst.operand_count = .UNARY;
+
     inst.dst = operand_increment(<<(head +1));
 
     if DEBUG {
@@ -847,6 +907,10 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
         case 0b1111_0111_111;
             inst.type = .IDIV;
 
+        case 0b1111_0110_010; #through;
+        case 0b1111_0111_010;
+            inst.type = .NOT;
+
         case 0b1111_1110_000; #through;
         case 0b1111_1111_000;
             inst.type = .INC;
@@ -857,7 +921,6 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
         case 0b1111_1111_110;
             inst.type = .PUSH;
     }
-
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
     rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
