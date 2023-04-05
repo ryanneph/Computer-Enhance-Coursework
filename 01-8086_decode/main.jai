@@ -115,6 +115,7 @@ Instruction_Type :: enum u32 {
     SHL;          // @mnemonic:shl
     SHR;          // @mnemonic:shr
     SUB;          // @mnemonic:sub
+    TEST;         // @mnemonic:test
     XCHG;         // @mnemonic:xchg
     XLAT;         // @mnemonic:xlat
     _ENUM_COUNT;
@@ -182,6 +183,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.SHL]         = "shl";
     strings[Instruction_Type.SHR]         = "shr";
     strings[Instruction_Type.SUB]         = "sub";
+    strings[Instruction_Type.TEST]        = "test";
     strings[Instruction_Type.XCHG]        = "xchg";
     strings[Instruction_Type.XLAT]        = "xlat";
 }
@@ -235,6 +237,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x24, 0x25, ".{ decode_arith_imm_to_accum,   .AND,         }");
     #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum,   .SUB,         }");
     #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum,   .CMP,         }");
+    #insert #run assign_op_info_range(0xA8, 0xA9, ".{ decode_arith_imm_to_accum,   .TEST         }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,      .INVALID,     }");
     #insert #run assign_op_info_range(0x90, 0x97, ".{ decode_arith_reg_with_accum, .XCHG,        }");
     #insert #run assign_op_info_range(0xD0, 0xD3, ".{ decode_bit_ops,              .INVALID,     }");
@@ -271,6 +274,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_reg_with_rm,          .ADD,         }");
     #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_reg_with_rm,          .ADC,         }");
     #insert #run assign_op_info_range(0x18, 0x1B, ".{ decode_reg_with_rm,          .SBB,         }");
+    #insert #run assign_op_info_range(0x84, 0x85, ".{ decode_reg_with_rm,          .TEST,        }");
     #insert #run assign_op_info_range(0x20, 0x23, ".{ decode_reg_with_rm,          .AND,         }");
     #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_reg_with_rm,          .SUB,         }");
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_reg_with_rm,          .CMP,         }");
@@ -549,10 +553,14 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     }
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
+    // HACK(ryan): TEST and ADD share a 3-bit pattern
+    if (<<head & 0b1111_1110) == 0b1111_0110
+        inst.type = .TEST;
+
     offset: s32 = 2;
-    rm, extra_advance := _decode_rm(head + offset, *inst.mode, field_rm, field_w);
+    rm, extra_advance := _decode_rm(head + offset, *inst.mode, field_rm, field_w, explicit_size=true);
     offset += extra_advance;
-    imm, extra_advance2 := _decode_immediate(head + offset, field_s, field_w, implicit_size=inst.mode == .REGISTER);
+    imm, extra_advance2 := _decode_immediate(head + offset, field_s, field_w, implicit_size=true);
     offset += extra_advance2;
 
     inst.src = imm;
@@ -890,11 +898,18 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_inst2 : s32 = (<<(head + 1) & 0b0011_1000) >> 3;
     field_rm    := (<<(head + 1) & 0b0000_0111);
 
+    field_inst := ((field_inst1 << 3) | field_inst2);
+
+    // HACK(ryan): Weird special case where we must entirely redirect TEST instructions to another
+    // handler
+    if (field_inst & 0b1111_1110_111) == 0b1111_0110_000 {
+        return decode_arith_imm_to_rm(inst, head);
+    }
+
     inst.desc = "increment register/memory";
     inst.operand_count = .UNARY;
     inst.mode = memory_mode(field_mod);
 
-    field_inst := ((field_inst1 << 3) | field_inst2);
     if field_inst == {
         case 0b1000_1111_000;
             inst.type = .POP;
