@@ -60,6 +60,7 @@ Instruction_Type :: enum u32 {
     AAS;          // @mnemonic:aas
     ADC;          // @mnemonic:adc
     ADD;          // @mnemonic:add
+    AND;          // @mnemonic:and
     CBW;          // @mnemonic:cbw
     CMP;          // @mnemonic:cmp
     CWD;          // @mnemonic:cwd
@@ -126,6 +127,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.AAS]         = "aas";
     strings[Instruction_Type.ADC]         = "adc";
     strings[Instruction_Type.ADD]         = "add";
+    strings[Instruction_Type.AND]         = "and";
     strings[Instruction_Type.CBW]         = "cbw";
     strings[Instruction_Type.CMP]         = "cmp";
     strings[Instruction_Type.CWD]         = "cwd";
@@ -230,6 +232,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum,   .ADD,         }");
     #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum,   .ADC,         }");
     #insert #run assign_op_info_range(0x1C, 0x1D, ".{ decode_arith_imm_to_accum,   .SBB,         }");
+    #insert #run assign_op_info_range(0x24, 0x25, ".{ decode_arith_imm_to_accum,   .AND,         }");
     #insert #run assign_op_info_range(0x2C, 0x2D, ".{ decode_arith_imm_to_accum,   .SUB,         }");
     #insert #run assign_op_info_range(0x3C, 0x3D, ".{ decode_arith_imm_to_accum,   .CMP,         }");
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,      .INVALID,     }");
@@ -268,6 +271,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_reg_with_rm,          .ADD,         }");
     #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_reg_with_rm,          .ADC,         }");
     #insert #run assign_op_info_range(0x18, 0x1B, ".{ decode_reg_with_rm,          .SBB,         }");
+    #insert #run assign_op_info_range(0x20, 0x23, ".{ decode_reg_with_rm,          .AND,         }");
     #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_reg_with_rm,          .SUB,         }");
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_reg_with_rm,          .CMP,         }");
     #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_reg_with_rm,          .XCHG,        }");
@@ -535,6 +539,8 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
             inst.type = .ADC;
         case 0b011;
             inst.type = .SBB;
+        case 0b100;
+            inst.type = .AND;
         case 0b101;
             inst.type = .SUB;
         case 0b111;
