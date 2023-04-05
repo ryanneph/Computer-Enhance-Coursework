@@ -454,7 +454,9 @@ _decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8, implicit_size: bo
     return imm, advance_count;
 }
 
-_decode_rm :: (head_disp: *u8, in_mode: *Memory_Mode, field_rm: u8, field_w: u8) -> (Operand, bytes_read: s32) {
+_decode_rm :: (head_disp: *u8, in_mode: *Memory_Mode, field_rm: u8, field_w: u8, explicit_size: bool = false)
+           -> (Operand, bytes_read: s32)
+{
     advance_count: s32;
     rm: Operand;
     mode := <<in_mode;
@@ -482,6 +484,9 @@ _decode_rm :: (head_disp: *u8, in_mode: *Memory_Mode, field_rm: u8, field_w: u8)
             assert(mode < 3);
             advance_count = cast(s32)mode;
         }
+
+        if (explicit_size)
+            rm.size = ifx field_w then Operand_Size.WORD else .BYTE;
     }
 
     return rm, advance_count;
@@ -595,12 +600,11 @@ decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
     inst.mode = memory_mode(field_mod);
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w, explicit_size=true);
 
     inst.desc = "bit manipulation of register/memory by 1 or value in cl register";
     inst.src = ifx !field_v then operand_immediate(1) else operand_register("cl");
     inst.dst = rm;
-    inst.dst.size = ifx field_w then Operand_Size.WORD else .BYTE;
 
     if DEBUG {
         print("% %, % ; {first_byte=0x%, v=% w=%, mod=% inst=% rm=%} (%)\n",
@@ -923,9 +927,8 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     }
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w, explicit_size=true);
     inst.dst = rm;
-    inst.dst.size = ifx field_w then Operand_Size.WORD else .BYTE;
 
     if DEBUG {
         print("% %  ; {first_byte=0x%, w=% mod=% rm=%} (%)\n",
