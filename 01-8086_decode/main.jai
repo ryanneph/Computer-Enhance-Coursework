@@ -55,6 +55,8 @@ Operand :: struct {
 Instruction_Type :: enum u32 {
     INVALID :: 0;
     AAA;          // @mnemonic:aaa
+    AAD;          // @mnemonic:aad
+    AAM;          // @mnemonic:aam
     AAS;          // @mnemonic:aas
     ADC;          // @mnemonic:adc
     ADD;          // @mnemonic:add
@@ -109,6 +111,8 @@ Instruction_Type :: enum u32 {
 Mnemonic_Table :: struct {
     strings: [Instruction_Type._ENUM_COUNT]string;
     strings[Instruction_Type.AAA]         = "aaa";
+    strings[Instruction_Type.AAD]         = "aad";
+    strings[Instruction_Type.AAM]         = "aam";
     strings[Instruction_Type.AAS]         = "aas";
     strings[Instruction_Type.ADC]         = "adc";
     strings[Instruction_Type.ADD]         = "add";
@@ -228,6 +232,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x9D, 0x9D, ".{ decode_no_operands,          .POPF,        }");
     #insert #run assign_op_info_range(0x9E, 0x9E, ".{ decode_no_operands,          .SAHF,        }");
     #insert #run assign_op_info_range(0x9F, 0x9F, ".{ decode_no_operands,          .LAHF,        }");
+    #insert #run assign_op_info_range(0xD4, 0xD4, ".{ decode_no_operands,          .AAM,         }");
+    #insert #run assign_op_info_range(0xD5, 0xD5, ".{ decode_no_operands,          .AAD,         }");
     #insert #run assign_op_info_range(0xD7, 0xD7, ".{ decode_no_operands,          .XLAT,        }");
     #insert #run assign_op_info_range(0x06, 0x06, ".{ decode_push_pop_seg,         .PUSH,        }");
     #insert #run assign_op_info_range(0x07, 0x07, ".{ decode_push_pop_seg,         .POP,         }");
@@ -736,7 +742,10 @@ decode_no_operands :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
         print("%  ; {first_byte=0x%} (%)\n", mnemonic_string(inst.type), formatHex(<<head), inst.desc);
     }
 
-    return 1;
+    if (inst.type == .AAM || inst.type == .AAD)
+        return 2;
+    else
+        return 1;
 }
 
     decode_push_pop_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
