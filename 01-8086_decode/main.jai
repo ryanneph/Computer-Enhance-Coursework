@@ -62,6 +62,9 @@ Instruction_Type :: enum u32 {
     DAA;          // @mnemonic:daa
     DAS;          // @mnemonic:das
     DEC;          // @mnemonic:dec
+    DIV;          // @mnemonic:div
+    IDIV;         // @mnemonic:idiv
+    IMUL;         // @mnemonic:imul
     IN;           // @mnemonic:in
     INC;          // @mnemonic:inc
     JBE_JNA;      // @mnemonic:jbe
@@ -89,6 +92,7 @@ Instruction_Type :: enum u32 {
     LOOPNZ;       // @mnemonic:loopnz
     LOOPZ;        // @mnemonic:loopz
     MOV;          // @mnemonic:mov
+    MUL;          // @mnemonic:mul
     NEG;          // @mnemonic:neg
     OUT;          // @mnemonic:out
     POP;          // @mnemonic:pop
@@ -112,6 +116,9 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.DAA]         = "daa";
     strings[Instruction_Type.DAS]         = "das";
     strings[Instruction_Type.DEC]         = "dec";
+    strings[Instruction_Type.DIV]         = "div";
+    strings[Instruction_Type.IDIV]        = "idiv";
+    strings[Instruction_Type.IMUL]        = "imul";
     strings[Instruction_Type.INC]         = "inc";
     strings[Instruction_Type.IN]          = "in";
     strings[Instruction_Type.JBE_JNA]     = "jbe";
@@ -139,6 +146,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.LOOPZ]       = "loopz";
     strings[Instruction_Type.LOOP]        = "loop";
     strings[Instruction_Type.MOV]         = "mov";
+    strings[Instruction_Type.MUL]         = "mul";
     strings[Instruction_Type.NEG]         = "neg";
     strings[Instruction_Type.OUT]         = "out";
     strings[Instruction_Type.POPF]        = "popf";
@@ -793,26 +801,49 @@ decode_unary_reg ::    (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_w     :=  << head      & 0b0000_0001;
     field_mod   := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_inst1 := (<< head      & 0b1111_0000) >> 1;
-    field_inst2 := (<<(head + 1) & 0b0011_1000) >> 3;
+    field_inst1 : s32 = (<< head);
+    field_inst2 : s32 = (<<(head + 1) & 0b0011_1000) >> 3;
     field_rm    := (<<(head + 1) & 0b0000_0111);
 
     inst.desc = "increment register/memory";
     inst.operand_count = .UNARY;
     inst.mode = memory_mode(field_mod);
 
-    if (field_inst2 | field_inst1) == {
-        case 0b1111_000;
-            inst.type = .INC;
-        case 0b1111_001;
-            inst.type = .DEC;
-        case 0b1111_011;
-            inst.type = .NEG;
-        case 0b1111_110;
-            inst.type = .PUSH;
-        case 0b1000_000;
+    field_inst := ((field_inst1 << 3) | field_inst2);
+    if field_inst == {
+        case 0b1000_1111_000;
             inst.type = .POP;
+
+        case 0b1111_0110_011; #through;
+        case 0b1111_0111_011;
+            inst.type = .NEG;
+
+        case 0b1111_0110_100; #through;
+        case 0b1111_0111_100;
+            inst.type = .MUL;
+        case 0b1111_0110_101; #through;
+        case 0b1111_0111_101;
+            inst.type = .IMUL;
+
+        case 0b1111_0110_110; #through;
+        case 0b1111_0111_110;
+            inst.type = .DIV;
+        case 0b1111_0110_111; #through;
+        case 0b1111_0111_111;
+            inst.type = .IDIV;
+
+        case 0b1111_1110_000; #through;
+        case 0b1111_1111_000;
+            inst.type = .INC;
+        case 0b1111_1110_001; #through;
+        case 0b1111_1111_001;
+            inst.type = .DEC;
+
+        case 0b1111_1111_110;
+            inst.type = .PUSH;
     }
+
+    assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
     rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
     inst.dst = rm;
