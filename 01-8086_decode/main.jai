@@ -60,7 +60,9 @@ Instruction_Type :: enum u32 {
     AAS;          // @mnemonic:aas
     ADC;          // @mnemonic:adc
     ADD;          // @mnemonic:add
+    CBW;          // @mnemonic:cbw
     CMP;          // @mnemonic:cmp
+    CWD;          // @mnemonic:cwd
     DAA;          // @mnemonic:daa
     DAS;          // @mnemonic:das
     DEC;          // @mnemonic:dec
@@ -116,7 +118,9 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.AAS]         = "aas";
     strings[Instruction_Type.ADC]         = "adc";
     strings[Instruction_Type.ADD]         = "add";
+    strings[Instruction_Type.CBW]         = "cbw";
     strings[Instruction_Type.CMP]         = "cmp";
+    strings[Instruction_Type.CWD]         = "cwd";
     strings[Instruction_Type.DAA]         = "daa";
     strings[Instruction_Type.DAS]         = "das";
     strings[Instruction_Type.DEC]         = "dec";
@@ -228,6 +232,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x2F, 0x2F, ".{ decode_no_operands,          .DAS,         }");
     #insert #run assign_op_info_range(0x37, 0x37, ".{ decode_no_operands,          .AAA,         }");
     #insert #run assign_op_info_range(0x3F, 0x3F, ".{ decode_no_operands,          .AAS,         }");
+    #insert #run assign_op_info_range(0x98, 0x98, ".{ decode_no_operands,          .CBW,         }");
+    #insert #run assign_op_info_range(0x99, 0x99, ".{ decode_no_operands,          .CWD,         }");
     #insert #run assign_op_info_range(0x9C, 0x9C, ".{ decode_no_operands,          .PUSHF,       }");
     #insert #run assign_op_info_range(0x9D, 0x9D, ".{ decode_no_operands,          .POPF,        }");
     #insert #run assign_op_info_range(0x9E, 0x9E, ".{ decode_no_operands,          .SAHF,        }");
