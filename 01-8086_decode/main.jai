@@ -63,6 +63,7 @@ Instruction_Type :: enum u32 {
     AND;          // @mnemonic:and
     CBW;          // @mnemonic:cbw
     CMP;          // @mnemonic:cmp
+    CMPS;         // @mnemonic:cmps
     CWD;          // @mnemonic:cwd
     DAA;          // @mnemonic:daa
     DAS;          // @mnemonic:das
@@ -93,6 +94,7 @@ Instruction_Type :: enum u32 {
     LDS;          // @mnemonic:lds
     LEA;          // @mnemonic:lea
     LES;          // @mnemonic:les
+    LODS;         // @mnemonic:lods
     LOOP;         // @mnemonic:loop
     LOOPNZ;       // @mnemonic:loopnz
     LOOPZ;        // @mnemonic:loopz
@@ -114,8 +116,10 @@ Instruction_Type :: enum u32 {
     SAHF;         // @mnemonic:sahf
     SAR;          // @mnemonic:sar
     SBB;          // @mnemonic:sbb
+    SCAS;         // @mnemonic:scas
     SHL;          // @mnemonic:shl
     SHR;          // @mnemonic:shr
+    STOS;         // @mnemonic:stos
     SUB;          // @mnemonic:sub
     TEST;         // @mnemonic:test
     XCHG;         // @mnemonic:xchg
@@ -134,6 +138,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.AND]         = "and";
     strings[Instruction_Type.CBW]         = "cbw";
     strings[Instruction_Type.CMP]         = "cmp";
+    strings[Instruction_Type.CMPS]        = "cmps";
     strings[Instruction_Type.CWD]         = "cwd";
     strings[Instruction_Type.DAA]         = "daa";
     strings[Instruction_Type.DAS]         = "das";
@@ -164,6 +169,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.LDS]         = "lds";
     strings[Instruction_Type.LEA]         = "lea";
     strings[Instruction_Type.LES]         = "les";
+    strings[Instruction_Type.LODS]        = "lods";
     strings[Instruction_Type.LOOPNZ]      = "loopnz";
     strings[Instruction_Type.LOOPZ]       = "loopz";
     strings[Instruction_Type.LOOP]        = "loop";
@@ -185,9 +191,11 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.SAHF]        = "sahf";
     strings[Instruction_Type.SAR]         = "sar";
     strings[Instruction_Type.SBB]         = "sbb";
+    strings[Instruction_Type.SCAS]        = "scas";
     strings[Instruction_Type.SHL]         = "shl";
     strings[Instruction_Type.SHR]         = "shr";
     strings[Instruction_Type.SUB]         = "sub";
+    strings[Instruction_Type.STOS]        = "stos";
     strings[Instruction_Type.TEST]        = "test";
     strings[Instruction_Type.XCHG]        = "xchg";
     strings[Instruction_Type.XLAT]        = "xlat";
@@ -195,7 +203,7 @@ Mnemonic_Table :: struct {
 }
 mnemonic_table: Mnemonic_Table;
 mnemonic_string :: inline (type: Instruction_Type) -> string {
-    assert(type != .INVALID);
+    assert(type != .INVALID, "invalid instruction type");
     assert(cast(s64)type < mnemonic_table.strings.count);
     mnemonic :=  mnemonic_table.strings[type];
     assert(mnemonic.count > 0, "mnemonic string not defined for Instruction_Type.%\n", type);
@@ -299,7 +307,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_reg_with_rm,          .CMP,         }");
     #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_reg_with_rm,          .XCHG,        }");
     #insert #run assign_op_info_range(0x88, 0x8C, ".{ decode_reg_with_rm,          .MOV,         }");
-    #insert #run assign_op_info_range(0xA4, 0xA5, ".{ decode_string_manipulation,  .MOVS,        }");
+    #insert #run assign_op_info_range(0xA4, 0xA7, ".{ decode_string_manipulation,  .INVALID,     }");
+    #insert #run assign_op_info_range(0xAA, 0xAF, ".{ decode_string_manipulation,  .INVALID,     }");
     #insert #run assign_op_info_range(0x40, 0x47, ".{ decode_unary_reg,            .INC,         }");
     #insert #run assign_op_info_range(0x48, 0x4F, ".{ decode_unary_reg,            .DEC,         }");
     #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_unary_reg,            .PUSH,        }");
@@ -835,7 +844,23 @@ decode_mov_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) 
 }
 
 decode_string_manipulation :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_w := <<head & 0b0000_0001;
+    field_inst := (<<head & 0b0000_1110) >> 1;
+    field_w    :=  <<head & 0b0000_0001;
+
+    inst_table ::  Instruction_Type.[
+        .INVALID,
+        .INVALID,
+        .MOVS,
+        .CMPS,
+        .INVALID,
+        .STOS,
+        .LODS,
+        .SCAS,
+    ];
+
+    assert(field_inst < inst_table.count);
+    inst.type = inst_table[field_inst];
+    assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
     inst.desc = "string manipulation";
     inst.operand_count = .ZERO;
