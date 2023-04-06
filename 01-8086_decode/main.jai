@@ -61,6 +61,7 @@ Instruction_Type :: enum u32 {
     ADC;          // @mnemonic:adc
     ADD;          // @mnemonic:add
     AND;          // @mnemonic:and
+    CALL;         // @mnemonic:call
     CBW;          // @mnemonic:cbw
     CMP;          // @mnemonic:cmp
     CMPS;         // @mnemonic:cmps
@@ -136,6 +137,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.ADC]         = "adc";
     strings[Instruction_Type.ADD]         = "add";
     strings[Instruction_Type.AND]         = "and";
+    strings[Instruction_Type.CALL]        = "call";
     strings[Instruction_Type.CBW]         = "cbw";
     strings[Instruction_Type.CMP]         = "cmp";
     strings[Instruction_Type.CMPS]        = "cmps";
@@ -229,6 +231,7 @@ Instruction :: struct {
     operand_count := Operand_Count.BINARY;
     mode: Memory_Mode;
     flags: Instruction_Flags;
+    size: u32;
 
     // TODO(ryan): maybe store *Opcode_Info for indirection instead?
     desc: string;
@@ -316,6 +319,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x8F, 0x8F, ".{ decode_unary_rm,             .INVALID,     }");
     #insert #run assign_op_info_range(0xF6, 0xF7, ".{ decode_unary_rm,             .INVALID,     }");
     #insert #run assign_op_info_range(0xFE, 0xFF, ".{ decode_unary_rm,             .INVALID,     }");
+
+    #insert #run assign_op_info_range(0xE8, 0xE8, ".{ decode_call_direct_in_seg,   .CALL,        }");
 }
 opcode_table: Opcode_Table;
 #run (){
@@ -422,11 +427,9 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             builder: String_Builder;
             builder.allocator = temporary_allocator;
 
-            // HACK(ryan): relying on size of JNZ instruction is 2 bytes (so offset is relative to
-            // "after decoding JNZ instruction"). We could emit labels instead with a slightly more
-            // sophisticated disassembly loop.
-            // TODO(ryan): consider storing instruction size on Increment for flexibility here;
-            append(*builder, "$+2");
+            // TODO(ryan): We could emit labels instead with a slightly more sophisticated disassembly loop.
+            print_to_builder(*builder, "$+%", inst.size);
+
             inc := inst.dst.inc.val;
             if (inc) {
                 if inc > 0  print_to_builder(*builder, " + %", inc);
@@ -729,6 +732,7 @@ decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
 
     inst.desc = "jump short (8-bit) if condition is met";
     inst.operand_count = .UNARY;
+    inst.size = 2;
 
     inst.dst = operand_increment(<<(head +1));
 
@@ -738,6 +742,40 @@ decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
     }
 
     return 2;
+}
+
+decode_call_direct_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    inst.desc = "call direct within segment";
+    inst.operand_count = .UNARY;
+    inst.size = 3;
+
+    inst.dst = operand_increment(<<(head + 1), <<(head + 2));
+
+    if DEBUG {
+        print("%  ; {increment=%} (%)\n",
+            instruction_to_string(inst), inst.dst.inc.val, inst.desc);
+    }
+
+    return 3;
+}
+
+decode_call_indirect_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    field_mod   := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_rm    := (<<(head + 1) & 0b0000_0111);
+
+    inst.desc = "call indirect within segment";
+    inst.operand_count = .UNARY;
+    inst.mode = memory_mode(field_mod);
+
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, 1);
+    inst.dst = rm;
+
+    if DEBUG {
+        print("%  ; {mod=% rm=%} (%)\n",
+            instruction_to_string(inst), field_mod, field_rm, inst.desc);
+    }
+
+    return 2 + extra_advance;
 }
 
 decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
@@ -957,6 +995,9 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     // handler
     if (field_inst & 0b1111_1110_111) == 0b1111_0110_000 {
         return decode_arith_imm_to_rm(inst, head);
+    } else if (field_inst == 0b1111_1111_010) {
+        inst.type = .CALL;
+        return decode_call_indirect_in_seg(inst, head);
     }
 
     inst.desc = "increment register/memory";
