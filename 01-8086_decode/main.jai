@@ -237,6 +237,7 @@ Opcode_Table :: struct {
     }
     #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum,   .ADD,         }");
     #insert #run assign_op_info_range(0x0C, 0x0D, ".{ decode_arith_imm_to_accum,   .OR,          }");
+    #insert #run assign_op_info_range(0x34, 0x35, ".{ decode_arith_imm_to_accum,   .XOR,         }");
     #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum,   .ADC,         }");
     #insert #run assign_op_info_range(0x1C, 0x1D, ".{ decode_arith_imm_to_accum,   .SBB,         }");
     #insert #run assign_op_info_range(0x24, 0x25, ".{ decode_arith_imm_to_accum,   .AND,         }");
@@ -283,6 +284,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x84, 0x85, ".{ decode_reg_with_rm,          .TEST,        }");
     #insert #run assign_op_info_range(0x20, 0x23, ".{ decode_reg_with_rm,          .AND,         }");
     #insert #run assign_op_info_range(0x28, 0x2B, ".{ decode_reg_with_rm,          .SUB,         }");
+    #insert #run assign_op_info_range(0x30, 0x33, ".{ decode_reg_with_rm,          .XOR,         }");
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_reg_with_rm,          .CMP,         }");
     #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_reg_with_rm,          .XCHG,        }");
     #insert #run assign_op_info_range(0x88, 0x8C, ".{ decode_reg_with_rm,          .MOV,         }");
@@ -555,6 +557,8 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
             inst.type = .AND;
         case 0b101;
             inst.type = .SUB;
+        case 0b110;
+            inst.type = .XOR;
         case 0b111;
             inst.type = .CMP;
     }
