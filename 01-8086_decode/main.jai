@@ -100,6 +100,7 @@ Instruction_Type :: enum u32 {
     MUL;          // @mnemonic:mul
     NEG;          // @mnemonic:neg
     NOT;          // @mnemonic:not
+    OR;           // @mnemonic:or
     OUT;          // @mnemonic:out
     POP;          // @mnemonic:pop
     POPF;         // @mnemonic:popf
@@ -118,6 +119,7 @@ Instruction_Type :: enum u32 {
     TEST;         // @mnemonic:test
     XCHG;         // @mnemonic:xchg
     XLAT;         // @mnemonic:xlat
+    XOR;          // @mnemonic:xor
     _ENUM_COUNT;
 }
 Mnemonic_Table :: struct {
@@ -169,6 +171,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.NEG]         = "neg";
     strings[Instruction_Type.NOT]         = "not";
     strings[Instruction_Type.OUT]         = "out";
+    strings[Instruction_Type.OR]          = "or";
     strings[Instruction_Type.POPF]        = "popf";
     strings[Instruction_Type.POP]         = "pop";
     strings[Instruction_Type.PUSHF]       = "pushf";
@@ -186,6 +189,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.TEST]        = "test";
     strings[Instruction_Type.XCHG]        = "xchg";
     strings[Instruction_Type.XLAT]        = "xlat";
+    strings[Instruction_Type.XOR]         = "xor";
 }
 mnemonic_table: Mnemonic_Table;
 mnemonic_string :: inline (type: Instruction_Type) -> string {
@@ -232,6 +236,7 @@ Opcode_Table :: struct {
         return builder_to_string(*builder);
     }
     #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum,   .ADD,         }");
+    #insert #run assign_op_info_range(0x0C, 0x0D, ".{ decode_arith_imm_to_accum,   .OR,          }");
     #insert #run assign_op_info_range(0x14, 0x15, ".{ decode_arith_imm_to_accum,   .ADC,         }");
     #insert #run assign_op_info_range(0x1C, 0x1D, ".{ decode_arith_imm_to_accum,   .SBB,         }");
     #insert #run assign_op_info_range(0x24, 0x25, ".{ decode_arith_imm_to_accum,   .AND,         }");
@@ -272,6 +277,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x1E, 0x1E, ".{ decode_push_pop_seg,         .PUSH,        }");
     #insert #run assign_op_info_range(0x1F, 0x1F, ".{ decode_push_pop_seg,         .POP,         }");
     #insert #run assign_op_info_range(0x00, 0x03, ".{ decode_reg_with_rm,          .ADD,         }");
+    #insert #run assign_op_info_range(0x08, 0x0B, ".{ decode_reg_with_rm,          .OR,          }");
     #insert #run assign_op_info_range(0x10, 0x13, ".{ decode_reg_with_rm,          .ADC,         }");
     #insert #run assign_op_info_range(0x18, 0x1B, ".{ decode_reg_with_rm,          .SBB,         }");
     #insert #run assign_op_info_range(0x84, 0x85, ".{ decode_reg_with_rm,          .TEST,        }");
@@ -539,6 +545,8 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     if field_inst == {
         case 0;
             inst.type = .ADD;
+        case 0b001;
+            inst.type = .OR;
         case 0b010;
             inst.type = .ADC;
         case 0b011;
@@ -549,7 +557,6 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
             inst.type = .SUB;
         case 0b111;
             inst.type = .CMP;
-        case; assert(false, "% NOT IMPLEMENTED", field_inst);
     }
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
