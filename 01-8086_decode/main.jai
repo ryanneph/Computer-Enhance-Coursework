@@ -80,6 +80,7 @@ Instruction_Type :: enum u32 {
     JE_JZ;        // @mnemonic:je
     JLE_JNG;      // @mnemonic:jle
     JL_JNGE;      // @mnemonic:jl
+    JMP;          // @mnemonic:jmp
     JNBE_JA;      // @mnemonic:ja
     JNB_JAE_JNC;  // @mnemonic:jnb
     JNE_JNZ;      // @mnemonic:jne
@@ -156,6 +157,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.JE_JZ]       = "je";
     strings[Instruction_Type.JLE_JNG]     = "jle";
     strings[Instruction_Type.JL_JNGE]     = "jl";
+    strings[Instruction_Type.JMP]         = "jmp";
     strings[Instruction_Type.JNBE_JA]     = "ja";
     strings[Instruction_Type.JNB_JAE_JNC] = "jnb";
     strings[Instruction_Type.JNE_JNZ]     = "jne";
@@ -321,6 +323,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xFE, 0xFF, ".{ decode_unary_rm,             .INVALID,     }");
 
     #insert #run assign_op_info_range(0xE8, 0xE8, ".{ decode_call_direct_in_seg,   .CALL,        }");
+    #insert #run assign_op_info_range(0xE9, 0xE9, ".{ decode_call_direct_in_seg,   .JMP,         }");
+    #insert #run assign_op_info_range(0xEB, 0xEB, ".{ decode_call_direct_in_seg,   .JMP,         }");
 }
 opcode_table: Opcode_Table;
 #run (){
@@ -745,25 +749,27 @@ decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
 }
 
 decode_call_direct_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    inst.desc = "call direct within segment";
-    inst.operand_count = .UNARY;
-    inst.size = 3;
+    field_short := (<<head & 0b0000_0010) >> 1;
 
-    inst.dst = operand_increment(<<(head + 1), <<(head + 2));
+    inst.desc = "direct within segment";
+    inst.operand_count = .UNARY;
+    inst.size = 2 + cast(u32) !field_short;
+
+    inst.dst = operand_increment(<<(head + 1), ifx !field_short then <<(head + 2) else 0);
 
     if DEBUG {
         print("%  ; {increment=%} (%)\n",
             instruction_to_string(inst), inst.dst.inc.val, inst.desc);
     }
 
-    return 3;
+    return cast(s32)inst.size;
 }
 
 decode_call_indirect_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_mod   := (<<(head + 1) & 0b1100_0000) >> 6;
     field_rm    := (<<(head + 1) & 0b0000_0111);
 
-    inst.desc = "call indirect within segment";
+    inst.desc = "indirect within segment";
     inst.operand_count = .UNARY;
     inst.mode = memory_mode(field_mod);
 
@@ -995,8 +1001,11 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     // handler
     if (field_inst & 0b1111_1110_111) == 0b1111_0110_000 {
         return decode_arith_imm_to_rm(inst, head);
-    } else if (field_inst == 0b1111_1111_010) {
+    } else if field_inst == 0b1111_1111_010 {
         inst.type = .CALL;
+        return decode_call_indirect_in_seg(inst, head);
+    } else if field_inst == 0b1111_1111_100 {
+        inst.type = .JMP;
         return decode_call_indirect_in_seg(inst, head);
     }
 
