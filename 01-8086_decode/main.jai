@@ -535,9 +535,8 @@ decode_arith_imm_to_accum :: (inst: *Instruction, head: *u8) -> (advance_count: 
     inst.src = operand_immediate(field_low, field_high);
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, inst=% w=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_inst, field_w, inst.desc);
+        print("%  ; {first_byte=0x%, inst=% w=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_inst, field_w, inst.desc);
     }
 
     return 2 + field_w;
@@ -590,9 +589,9 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     inst.dst = rm;
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, s=% w=%, mod=% inst=% rm=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_s, field_w, field_mod, field_inst, field_rm, inst.desc);
+        print("%  ; {first_byte=0x%, s=% w=%, mod=% inst=% rm=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_s, field_w, field_mod,
+            field_inst, field_rm, inst.desc);
     }
 
     return offset;
@@ -606,9 +605,8 @@ decode_arith_reg_with_accum :: (inst: *Instruction, head: *u8) -> (advance_count
     inst.src = operand_register(field_reg, 1);
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, reg=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_reg, inst.desc);
+        print("%  ; {first_byte=0x%, reg=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_reg, inst.desc);
     }
 
     return 1;
@@ -644,9 +642,9 @@ decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.dst = rm;
 
     if DEBUG {
-        print("% %, % ; {first_byte=0x%, v=% w=%, mod=% inst=% rm=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_v, field_w, field_mod, field_inst, field_rm, inst.desc);
+        print("%  ; {first_byte=0x%, v=% w=%, mod=% inst=% rm=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_v, field_w, field_mod,
+            field_inst, field_rm, inst.desc);
     }
 
     return 2 + extra_advance;
@@ -674,9 +672,8 @@ decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.src = ifx field_inst then accum else port;
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, field_inst=% field_w=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_inst, field_w, inst.desc);
+        print("%  ; {first_byte=0x%, field_inst=% field_w=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_inst, field_w, inst.desc);
     }
 
     advance_count : s32 = 1 + cast(s32) ifx !field_fv then 1 else 0;
@@ -727,9 +724,8 @@ decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
     inst.dst = operand_increment(<<(head +1));
 
     if DEBUG {
-        print("% %  ; {first_byte=0x%, increment=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), formatHex(<<head),
-            inst.dst.inc.val, inst.desc);
+        print("%  ; {first_byte=0x%, increment=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), inst.dst.inc.val, inst.desc);
     }
 
     return 2;
@@ -761,9 +757,8 @@ decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     inst.src = rm;
 
     if DEBUG {
-        print("% %, % ; (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            inst.desc);
+        print("%  ; (%)\n",
+            instruction_to_string(inst), inst.desc);
     }
 
     return 2 + extra_advance;
@@ -786,9 +781,8 @@ decode_mov_accumulator :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     inst.src = ifx field_to_mem then reg else mem;
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, to_mem=%, w=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_to_mem, field_w, inst.desc);
+        print("%  ; {first_byte=0x%, to_mem=%, w=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_to_mem, field_w, inst.desc);
     }
 
     return 3;
@@ -807,9 +801,9 @@ decode_mov_imm_to_reg :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
     advance_count := cast(s32)(ifx field_w then 3 else 2);
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, w=% reg=%, low=%, high=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_w, field_reg, field_low, field_high, inst.desc);
+        print("%  ; {first_byte=0x%, w=% reg=%, low=%, high=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_w, field_reg,
+            field_low, field_high, inst.desc);
     }
 
     return advance_count;
@@ -833,9 +827,8 @@ decode_mov_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) 
     offset += extra_advance2;
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, w=%} (%)\n",
-        mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-        formatHex(<<head), field_w, inst.desc);
+        print("%  ; {first_byte=0x%, w=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_w, inst.desc);
     }
 
     return offset;
@@ -849,7 +842,7 @@ decode_string_manipulation :: (inst: *Instruction, head: *u8) -> (advance_count:
     inst.flags |= ifx !field_w then Instruction_Flags.STRING_BYTE else .STRING_WORD;
 
     if DEBUG {
-        print("%  ; {first_byte=0x%} (%)\n", mnemonic_string(inst.type), formatHex(<<head), inst.desc);
+        print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
     }
 
     return 1;
@@ -860,7 +853,7 @@ decode_no_operands :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.operand_count = .ZERO;
 
     if DEBUG {
-        print("%  ; {first_byte=0x%} (%)\n", mnemonic_string(inst.type), formatHex(<<head), inst.desc);
+        print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
     }
 
     if (inst.type == .AAM || inst.type == .AAD)
@@ -878,9 +871,8 @@ decode_push_pop_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.dst = operand_segment(field_seg);
 
     if DEBUG {
-        print("% %  ; {first_byte=0x%, seg=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst),
-            formatHex(<<head), field_seg, inst.desc);
+        print("%  ; {first_byte=0x%, seg=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_seg, inst.desc);
     }
 
     return 1;
@@ -903,9 +895,9 @@ decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.src = ifx field_d then rm  else reg;
 
     if DEBUG {
-        print("% %, %  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src),
-            formatHex(<<head), field_d, field_w, field_mod, field_reg, field_rm, inst.desc);
+        print("%  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_d, field_w,
+            field_mod, field_reg, field_rm, inst.desc);
     }
 
     return 2 + extra_advance;
@@ -920,9 +912,8 @@ decode_unary_reg ::    (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.dst = operand_register(field_reg, 1);
 
     if DEBUG {
-        print("% %  ; {first_byte=0x%, reg=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst),
-            formatHex(<<head), field_reg, inst.desc);
+        print("%  ; {first_byte=0x%, reg=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_reg, inst.desc);
     }
 
     return 1;
@@ -989,9 +980,8 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.dst = rm;
 
     if DEBUG {
-        print("% %  ; {first_byte=0x%, w=% mod=% rm=%} (%)\n",
-            mnemonic_string(inst.type), operand_to_string(inst, inst.dst),
-            formatHex(<<head), field_w, field_mod, field_rm, inst.desc);
+        print("%  ; {first_byte=0x%, w=% mod=% rm=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_w, field_mod, field_rm, inst.desc);
     }
 
     return 2 + extra_advance;
