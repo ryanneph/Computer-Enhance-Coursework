@@ -97,6 +97,7 @@ Instruction_Type :: enum u32 {
     LOOPNZ;       // @mnemonic:loopnz
     LOOPZ;        // @mnemonic:loopz
     MOV;          // @mnemonic:mov
+    MOVS;         // @mnemonic:movs
     MUL;          // @mnemonic:mul
     NEG;          // @mnemonic:neg
     NOT;          // @mnemonic:not
@@ -167,6 +168,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.LOOPZ]       = "loopz";
     strings[Instruction_Type.LOOP]        = "loop";
     strings[Instruction_Type.MOV]         = "mov";
+    strings[Instruction_Type.MOVS]        = "movs";
     strings[Instruction_Type.MUL]         = "mul";
     strings[Instruction_Type.NEG]         = "neg";
     strings[Instruction_Type.NOT]         = "not";
@@ -206,10 +208,19 @@ Operand_Count :: enum {
     BINARY  :: 2;
 }
 
+Instruction_Flags :: enum_flags u32 {
+    REPEAT_ZERO;
+    REPEAT_NOTZERO;
+
+    STRING_BYTE;
+    STRING_WORD;
+}
+
 Instruction :: struct {
     type: Instruction_Type;
     operand_count := Operand_Count.BINARY;
     mode: Memory_Mode;
+    flags: Instruction_Flags;
 
     // TODO(ryan): maybe store *Opcode_Info for indirection instead?
     desc: string;
@@ -288,6 +299,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_reg_with_rm,          .CMP,         }");
     #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_reg_with_rm,          .XCHG,        }");
     #insert #run assign_op_info_range(0x88, 0x8C, ".{ decode_reg_with_rm,          .MOV,         }");
+    #insert #run assign_op_info_range(0xA4, 0xA5, ".{ decode_string_manipulation,  .MOVS,        }");
     #insert #run assign_op_info_range(0x40, 0x47, ".{ decode_unary_reg,            .INC,         }");
     #insert #run assign_op_info_range(0x48, 0x4F, ".{ decode_unary_reg,            .DEC,         }");
     #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_unary_reg,            .PUSH,        }");
@@ -829,6 +841,20 @@ decode_mov_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) 
     return offset;
 }
 
+decode_string_manipulation :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    field_w := <<head & 0b0000_0001;
+
+    inst.desc = "string manipulation";
+    inst.operand_count = .ZERO;
+    inst.flags |= ifx !field_w then Instruction_Flags.STRING_BYTE else .STRING_WORD;
+
+    if DEBUG {
+        print("%  ; {first_byte=0x%} (%)\n", mnemonic_string(inst.type), formatHex(<<head), inst.desc);
+    }
+
+    return 1;
+}
+
 decode_no_operands :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.desc = "no operands";
     inst.operand_count = .ZERO;
@@ -843,7 +869,7 @@ decode_no_operands :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
         return 1;
 }
 
-    decode_push_pop_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+decode_push_pop_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_seg := (<<(head) & 0b0001_1000) >> 3;
 
     inst.desc = "segment register to/from stack";
@@ -974,8 +1000,28 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 //
 // ENTRYPOINTS
 //
-decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
-    opcode := (0b1111_1111 & (<<head));
+decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, advance_count: s32) {
+    flags: Instruction_Flags;
+    advance_count: s32 = 0;
+    while true {
+        if <<head == {
+            case 0b1111_0010;
+                flags |= .REPEAT_NOTZERO;
+            case 0b1111_0011;
+                flags |= .REPEAT_ZERO;
+            case; break;
+        }
+        advance_count += 1;
+        head += 1;
+    }
+    return flags, advance_count;
+}
+
+decode_once :: (head: *u8) -> (Instruction, advance: s32) {
+    flags, prefix_advance := decode_all_prefix_bytes(head);
+    head += prefix_advance;
+
+    opcode := <<head;
     assert(opcode < opcode_table.ops.count);
     op_info := opcode_table.ops[opcode];
 
@@ -984,6 +1030,7 @@ decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
 
     inst: Instruction;
     inst.type = op_info.type; // NOTE(ryan): will be modified by decode proc if initially .INVALID in decode table
+    inst.flags = flags;
     advance_count := op_info.decode(*inst, head);
 
     assert(inst.type != .INVALID, "Instruction dispatch handler must resolve instruction if not resolvable automatically from the first byte");
@@ -991,7 +1038,37 @@ decode_once :: (offset: s64, head: *u8) -> (Instruction, advance: s64) {
     assert(inst.operand_count == .ZERO   || inst.dst.type != .INVALID, "dest operand must be valid if operand_count != .ZERO");
     assert(inst.operand_count != .BINARY || inst.src.type != .INVALID, "src operand must be valid if operand_count == .BINARY");
 
-    return inst, advance_count;
+    return inst, prefix_advance + advance_count;
+}
+
+instruction_to_string :: (inst: Instruction) -> string {
+    builder: String_Builder;
+    builder.allocator = temporary_allocator;
+
+    print_instruction(*builder, inst);
+    return builder_to_string(*builder);
+}
+
+print_instruction :: (builder: *String_Builder, inst: Instruction) {
+    if (inst.flags & .REPEAT_NOTZERO) {
+        append(builder, "repnz ");
+    } else if (inst.flags & .REPEAT_ZERO) {
+        append(builder, "rep ");
+    }
+
+    mnemonic := mnemonic_string(inst.type);
+    if #complete inst.operand_count == {
+        case .ZERO;
+            append(builder, mnemonic);
+            if inst.flags & .STRING_BYTE
+                append(builder, "b");
+            else if inst.flags & .STRING_WORD
+                append(builder, "w");
+        case .UNARY;
+            print_to_builder(builder, "% %", mnemonic, operand_to_string(inst, inst.dst));
+        case .BINARY;
+            print_to_builder(builder, "% %, %", mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
+    }
 }
 
 disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
@@ -1000,18 +1077,11 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
     offset := 0;
     while offset < bytes.count {
         head := bytes.data + offset;
-        inst, advance := decode_once(offset, head);
+        inst, advance := decode_once(head);
         offset += advance;
 
-        mnemonic := mnemonic_string(inst.type);
-        if #complete inst.operand_count == {
-            case .ZERO;
-                print_to_builder(*builder, "%\n", mnemonic);
-            case .UNARY;
-                print_to_builder(*builder, "% %\n", mnemonic, operand_to_string(inst, inst.dst));
-            case .BINARY;
-                print_to_builder(*builder, "% %, %\n", mnemonic, operand_to_string(inst, inst.dst), operand_to_string(inst, inst.src));
-        }
+        print_instruction(*builder, inst);
+        append(*builder, "\n");
     }
 
     file, success := file_open(output_asm_path, for_writing=true, keep_existing_content=false);
