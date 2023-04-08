@@ -49,6 +49,9 @@ Operand :: struct {
         imm: Immediate;
         inc: Increment;
     };
+
+    // prepended to operand (such as immediate ip) if instruction has flags & .FAR_SEGMENT
+    far_segment: u16;
 }
 
 // TODO(ryan): Hook the compilation-loop and populate the matched-index table automatically
@@ -255,7 +258,8 @@ Instruction_Flags :: enum_flags u32 {
     STRING_BYTE;
     STRING_WORD;
 
-    SEGMENT_OVERRIDE;
+    SEGMENT_OVERRIDE; // memory expression has segement register prefix (e.g. "cmp cx, [es:bp]")
+    FAR_SEGMENT;      // immediate has segment address prefix (e.g. "call 123:456")
     LOCK;
 }
 
@@ -292,6 +296,9 @@ Opcode_Table :: struct {
             print_to_builder(*builder, "ops[%] = %;\n", opcode, op_info_string);
         return builder_to_string(*builder);
     }
+    #insert #run assign_op_info_range(0x9A, 0x9A, ".{ decode_jump_direct_far,      .CALL,        }");
+    #insert #run assign_op_info_range(0xEA, 0xEA, ".{ decode_jump_direct_far,      .JMP,         }");
+
     #insert #run assign_op_info_range(0x04, 0x05, ".{ decode_arith_imm_to_accum,   .ADD,         }");
     #insert #run assign_op_info_range(0x0C, 0x0D, ".{ decode_arith_imm_to_accum,   .OR,          }");
     #insert #run assign_op_info_range(0x34, 0x35, ".{ decode_arith_imm_to_accum,   .XOR,         }");
@@ -493,7 +500,11 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             explicit_size := "";
             if operand.size      == .BYTE  explicit_size = "byte ";
             else if operand.size == .WORD  explicit_size = "word ";
-            return tprint("%0%0", explicit_size, operand.imm.val);
+
+            if inst.flags & .FAR_SEGMENT
+                return tprint("%0%:%", explicit_size, operand.far_segment, operand.imm.val);
+            else
+                return tprint("%0%0", explicit_size, operand.imm.val);
         case .MEMORY; {
             mem := *operand.mem;
 
@@ -510,7 +521,7 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             if inst.flags & .SEGMENT_OVERRIDE
                 segment_prefix = tprint("%:", segment(inst.segment_override));
 
-            if (inst.mode == .MEM_DIRECT) {
+            if inst.mode == .MEM_DIRECT {
                 print_to_builder(*builder, "[%0%]", segment_prefix, mem.direct);
             } else {
                 print_to_builder(*builder, "[%0%", segment_prefix, mem.base1);
@@ -1024,7 +1035,13 @@ decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.mode = memory_mode(field_mod);
     inst.desc = "Reg/memory with register to either";
 
-    reg := operand_register(field_reg, field_w);
+    // Special case for move to/from segment register
+    reg: Operand;
+    if <<head == 0x8C && !(<<(head + 1) & 0b0010_0000)
+        reg = operand_segment((<<(head + 1) & 0b0001_1000) >> 3);
+    else
+        reg = operand_register(field_reg, field_w);
+
     rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
 
     inst.dst = ifx field_d then reg else rm;
@@ -1141,6 +1158,27 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     }
 
     return 2 + extra_advance;
+}
+
+decode_jump_direct_far :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    field_ip_lo := <<(head + 1);
+    field_ip_hi := <<(head + 2);
+    field_cs_lo := <<(head + 3);
+    field_cs_hi := <<(head + 4);
+
+
+    inst.desc = "call direct intersegment";
+    inst.operand_count = .UNARY;
+    inst.flags |= .FAR_SEGMENT;
+
+    inst.dst = operand_immediate(field_ip_lo, field_ip_hi);
+    inst.dst.far_segment = immediate(field_cs_lo, field_cs_hi);
+
+    if DEBUG {
+        print("%  ; {first_byte=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), inst.desc);
+    }
+    return 5;
 }
 
 //
