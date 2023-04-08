@@ -63,6 +63,10 @@ Instruction_Type :: enum u32 {
     AND;          // @mnemonic:and
     CALL;         // @mnemonic:call
     CBW;          // @mnemonic:cbw
+    CLC;          // @mnemonic:clc
+    CLD;          // @mnemonic:cld
+    CLI;          // @mnemonic:cli
+    CMC;          // @mnemonic:cmc
     CMP;          // @mnemonic:cmp
     CMPS;         // @mnemonic:cmps
     CWD;          // @mnemonic:cwd
@@ -70,12 +74,13 @@ Instruction_Type :: enum u32 {
     DAS;          // @mnemonic:das
     DEC;          // @mnemonic:dec
     DIV;          // @mnemonic:div
+    HLT;          // @mnemonic:hlt
     IDIV;         // @mnemonic:idiv
     IMUL;         // @mnemonic:imul
     IN;           // @mnemonic:in
     INC;          // @mnemonic:inc
-    INT;          // @mnemonic:int
     INT3;         // @mnemonic:int3
+    INT;          // @mnemonic:int
     INTO;         // @mnemonic:into
     IRET;         // @mnemonic:iret
     JBE_JNA;      // @mnemonic:jbe
@@ -126,9 +131,13 @@ Instruction_Type :: enum u32 {
     SCAS;         // @mnemonic:scas
     SHL;          // @mnemonic:shl
     SHR;          // @mnemonic:shr
+    STC;          // @mnemonic:stc
+    STD;          // @mnemonic:std
+    STI;          // @mnemonic:sti
     STOS;         // @mnemonic:stos
     SUB;          // @mnemonic:sub
     TEST;         // @mnemonic:test
+    WAIT;         // @mnemonic:wait
     XCHG;         // @mnemonic:xchg
     XLAT;         // @mnemonic:xlat
     XOR;          // @mnemonic:xor
@@ -145,20 +154,25 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.AND]         = "and";
     strings[Instruction_Type.CALL]        = "call";
     strings[Instruction_Type.CBW]         = "cbw";
-    strings[Instruction_Type.CMP]         = "cmp";
+    strings[Instruction_Type.CLC]         = "clc";
+    strings[Instruction_Type.CLD]         = "cld";
+    strings[Instruction_Type.CLI]         = "cli";
+    strings[Instruction_Type.CMC]         = "cmc";
     strings[Instruction_Type.CMPS]        = "cmps";
+    strings[Instruction_Type.CMP]         = "cmp";
     strings[Instruction_Type.CWD]         = "cwd";
     strings[Instruction_Type.DAA]         = "daa";
     strings[Instruction_Type.DAS]         = "das";
     strings[Instruction_Type.DEC]         = "dec";
     strings[Instruction_Type.DIV]         = "div";
+    strings[Instruction_Type.HLT]         = "hlt";
     strings[Instruction_Type.IDIV]        = "idiv";
     strings[Instruction_Type.IMUL]        = "imul";
-    strings[Instruction_Type.IN]          = "in";
     strings[Instruction_Type.INC]         = "inc";
-    strings[Instruction_Type.INT]         = "int";
     strings[Instruction_Type.INT3]        = "int3";
     strings[Instruction_Type.INTO]        = "into";
+    strings[Instruction_Type.INT]         = "int";
+    strings[Instruction_Type.IN]          = "in";
     strings[Instruction_Type.IRET]        = "iret";
     strings[Instruction_Type.JBE_JNA]     = "jbe";
     strings[Instruction_Type.JB_JNAE_JC]  = "jb";
@@ -186,13 +200,13 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.LOOPNZ]      = "loopnz";
     strings[Instruction_Type.LOOPZ]       = "loopz";
     strings[Instruction_Type.LOOP]        = "loop";
-    strings[Instruction_Type.MOV]         = "mov";
     strings[Instruction_Type.MOVS]        = "movs";
+    strings[Instruction_Type.MOV]         = "mov";
     strings[Instruction_Type.MUL]         = "mul";
     strings[Instruction_Type.NEG]         = "neg";
     strings[Instruction_Type.NOT]         = "not";
-    strings[Instruction_Type.OUT]         = "out";
     strings[Instruction_Type.OR]          = "or";
+    strings[Instruction_Type.OUT]         = "out";
     strings[Instruction_Type.POPF]        = "popf";
     strings[Instruction_Type.POP]         = "pop";
     strings[Instruction_Type.PUSHF]       = "pushf";
@@ -208,9 +222,13 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.SCAS]        = "scas";
     strings[Instruction_Type.SHL]         = "shl";
     strings[Instruction_Type.SHR]         = "shr";
-    strings[Instruction_Type.SUB]         = "sub";
+    strings[Instruction_Type.STC]         = "stc";
+    strings[Instruction_Type.STD]         = "std";
+    strings[Instruction_Type.STI]         = "sti";
     strings[Instruction_Type.STOS]        = "stos";
+    strings[Instruction_Type.SUB]         = "sub";
     strings[Instruction_Type.TEST]        = "test";
+    strings[Instruction_Type.WAIT]        = "wait";
     strings[Instruction_Type.XCHG]        = "xchg";
     strings[Instruction_Type.XLAT]        = "xlat";
     strings[Instruction_Type.XOR]         = "xor";
@@ -300,6 +318,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x3F, 0x3F, ".{ decode_no_operands,          .AAS,         }");
     #insert #run assign_op_info_range(0x98, 0x98, ".{ decode_no_operands,          .CBW,         }");
     #insert #run assign_op_info_range(0x99, 0x99, ".{ decode_no_operands,          .CWD,         }");
+    #insert #run assign_op_info_range(0x9B, 0x9B, ".{ decode_no_operands,          .WAIT,        }");
     #insert #run assign_op_info_range(0x9C, 0x9C, ".{ decode_no_operands,          .PUSHF,       }");
     #insert #run assign_op_info_range(0x9D, 0x9D, ".{ decode_no_operands,          .POPF,        }");
     #insert #run assign_op_info_range(0x9E, 0x9E, ".{ decode_no_operands,          .SAHF,        }");
@@ -312,6 +331,14 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xD4, 0xD4, ".{ decode_no_operands,          .AAM,         }");
     #insert #run assign_op_info_range(0xD5, 0xD5, ".{ decode_no_operands,          .AAD,         }");
     #insert #run assign_op_info_range(0xD7, 0xD7, ".{ decode_no_operands,          .XLAT,        }");
+    #insert #run assign_op_info_range(0xF4, 0xF4, ".{ decode_no_operands,          .HLT,         }");
+    #insert #run assign_op_info_range(0xF5, 0xF5, ".{ decode_no_operands,          .CMC,         }");
+    #insert #run assign_op_info_range(0xF8, 0xF8, ".{ decode_no_operands,          .CLC,         }");
+    #insert #run assign_op_info_range(0xF9, 0xF9, ".{ decode_no_operands,          .STC,         }");
+    #insert #run assign_op_info_range(0xFA, 0xFA, ".{ decode_no_operands,          .CLI,         }");
+    #insert #run assign_op_info_range(0xFB, 0xFB, ".{ decode_no_operands,          .STI,         }");
+    #insert #run assign_op_info_range(0xFC, 0xFC, ".{ decode_no_operands,          .CLD,         }");
+    #insert #run assign_op_info_range(0xFD, 0xFD, ".{ decode_no_operands,          .STD,         }");
     #insert #run assign_op_info_range(0x06, 0x06, ".{ decode_push_pop_seg,         .PUSH,        }");
     #insert #run assign_op_info_range(0x07, 0x07, ".{ decode_push_pop_seg,         .POP,         }");
     #insert #run assign_op_info_range(0x0E, 0x0E, ".{ decode_push_pop_seg,         .PUSH,        }");
