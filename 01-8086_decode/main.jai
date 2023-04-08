@@ -74,6 +74,8 @@ Instruction_Type :: enum u32 {
     IMUL;         // @mnemonic:imul
     IN;           // @mnemonic:in
     INC;          // @mnemonic:inc
+    INT;          // @mnemonic:int
+    INT3;         // @mnemonic:int3
     JBE_JNA;      // @mnemonic:jbe
     JB_JNAE_JC;   // @mnemonic:jb
     JCXZ;         // @mnemonic:jcxz
@@ -150,8 +152,10 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.DIV]         = "div";
     strings[Instruction_Type.IDIV]        = "idiv";
     strings[Instruction_Type.IMUL]        = "imul";
-    strings[Instruction_Type.INC]         = "inc";
     strings[Instruction_Type.IN]          = "in";
+    strings[Instruction_Type.INC]         = "inc";
+    strings[Instruction_Type.INT]         = "int";
+    strings[Instruction_Type.INT3]        = "int3";
     strings[Instruction_Type.JBE_JNA]     = "jbe";
     strings[Instruction_Type.JB_JNAE_JC]  = "jb";
     strings[Instruction_Type.JCXZ]        = "jcxz";
@@ -298,6 +302,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x9F, 0x9F, ".{ decode_no_operands,          .LAHF,        }");
     #insert #run assign_op_info_range(0xC3, 0xC3, ".{ decode_no_operands,          .RET,         }");
     #insert #run assign_op_info_range(0xCB, 0xCB, ".{ decode_no_operands,          .RET,         }");
+    #insert #run assign_op_info_range(0xCC, 0xCC, ".{ decode_no_operands,          .INT3,        }");
     #insert #run assign_op_info_range(0xD4, 0xD4, ".{ decode_no_operands,          .AAM,         }");
     #insert #run assign_op_info_range(0xD5, 0xD5, ".{ decode_no_operands,          .AAD,         }");
     #insert #run assign_op_info_range(0xD7, 0xD7, ".{ decode_no_operands,          .XLAT,        }");
@@ -323,6 +328,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xCA, 0xCA, ".{ decode_ret_pop_sp,           .RET,         }");
     #insert #run assign_op_info_range(0xA4, 0xA7, ".{ decode_string_manipulation,  .INVALID,     }");
     #insert #run assign_op_info_range(0xAA, 0xAF, ".{ decode_string_manipulation,  .INVALID,     }");
+    #insert #run assign_op_info_range(0xCD, 0xCD, ".{ decode_unary_imm8,           .INT,         }");
     #insert #run assign_op_info_range(0x40, 0x47, ".{ decode_unary_reg,            .INC,         }");
     #insert #run assign_op_info_range(0x48, 0x4F, ".{ decode_unary_reg,            .DEC,         }");
     #insert #run assign_op_info_range(0x50, 0x57, ".{ decode_unary_reg,            .PUSH,        }");
@@ -705,6 +711,20 @@ decode_call_indirect_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count
     }
 
     return 2 + extra_advance;
+}
+
+decode_unary_imm8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    inst.desc = "unary op with 8 bit immediate data";
+    inst.operand_count = .UNARY;
+
+    inst.dst = operand_immediate(<<(head + 1));
+
+    if DEBUG {
+        print("%  ; {first_byte=0x%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), inst.desc);
+    }
+
+    return 2;
 }
 
 decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
