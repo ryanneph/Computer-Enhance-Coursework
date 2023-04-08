@@ -256,6 +256,7 @@ Instruction_Flags :: enum_flags u32 {
     STRING_WORD;
 
     SEGMENT_OVERRIDE;
+    LOCK;
 }
 
 Instruction :: struct {
@@ -1151,6 +1152,8 @@ decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, segment_override: 
     advance_count: s32 = 0;
     while true {
         if <<head == {
+            case 0b1111_0000;
+                flags |= .LOCK;
             case 0b1111_0010;
                 flags |= .REPEAT_NOTZERO;
             case 0b1111_0011;
@@ -1209,11 +1212,12 @@ instruction_to_string :: (inst: Instruction) -> string {
 }
 
 print_instruction :: (builder: *String_Builder, inst: Instruction) {
-    if (inst.flags & .REPEAT_NOTZERO) {
+    if inst.flags & .REPEAT_NOTZERO
         append(builder, "repnz ");
-    } else if (inst.flags & .REPEAT_ZERO) {
+    else if inst.flags & .REPEAT_ZERO
         append(builder, "rep ");
-    }
+    else if inst.flags & .LOCK
+        append(builder, "lock ");
 
     mnemonic := mnemonic_string(inst.type);
     if #complete inst.operand_count == {
