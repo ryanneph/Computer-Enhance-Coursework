@@ -76,6 +76,8 @@ Instruction_Type :: enum u32 {
     INC;          // @mnemonic:inc
     INT;          // @mnemonic:int
     INT3;         // @mnemonic:int3
+    INTO;         // @mnemonic:into
+    IRET;         // @mnemonic:iret
     JBE_JNA;      // @mnemonic:jbe
     JB_JNAE_JC;   // @mnemonic:jb
     JCXZ;         // @mnemonic:jcxz
@@ -156,6 +158,8 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.INC]         = "inc";
     strings[Instruction_Type.INT]         = "int";
     strings[Instruction_Type.INT3]        = "int3";
+    strings[Instruction_Type.INTO]        = "into";
+    strings[Instruction_Type.IRET]        = "iret";
     strings[Instruction_Type.JBE_JNA]     = "jbe";
     strings[Instruction_Type.JB_JNAE_JC]  = "jb";
     strings[Instruction_Type.JCXZ]        = "jcxz";
@@ -303,6 +307,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0xC3, 0xC3, ".{ decode_no_operands,          .RET,         }");
     #insert #run assign_op_info_range(0xCB, 0xCB, ".{ decode_no_operands,          .RET,         }");
     #insert #run assign_op_info_range(0xCC, 0xCC, ".{ decode_no_operands,          .INT3,        }");
+    #insert #run assign_op_info_range(0xCE, 0xCE, ".{ decode_no_operands,          .INTO,        }");
+    #insert #run assign_op_info_range(0xCF, 0xCF, ".{ decode_no_operands,          .IRET,        }");
     #insert #run assign_op_info_range(0xD4, 0xD4, ".{ decode_no_operands,          .AAM,         }");
     #insert #run assign_op_info_range(0xD5, 0xD5, ".{ decode_no_operands,          .AAD,         }");
     #insert #run assign_op_info_range(0xD7, 0xD7, ".{ decode_no_operands,          .XLAT,        }");
