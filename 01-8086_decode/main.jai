@@ -113,6 +113,7 @@ Instruction_Type :: enum u32 {
     PUSHF;        // @mnemonic:pushf
     RCL;          // @mnemonic:rcl
     RCR;          // @mnemonic:rcr
+    RET;          // @mnemonic:ret
     ROL;          // @mnemonic:rol
     ROR;          // @mnemonic:ror
     SAHF;         // @mnemonic:sahf
@@ -190,6 +191,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.PUSH]        = "push";
     strings[Instruction_Type.RCL]         = "rcl";
     strings[Instruction_Type.RCR]         = "rcr";
+    strings[Instruction_Type.RET]         = "ret";
     strings[Instruction_Type.ROL]         = "rol";
     strings[Instruction_Type.ROR]         = "ror";
     strings[Instruction_Type.SAHF]        = "sahf";
@@ -271,6 +273,9 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x80, 0x83, ".{ decode_arith_imm_to_rm,      .INVALID,     }");
     #insert #run assign_op_info_range(0x90, 0x97, ".{ decode_arith_reg_with_accum, .XCHG,        }");
     #insert #run assign_op_info_range(0xD0, 0xD3, ".{ decode_bit_ops,              .INVALID,     }");
+    #insert #run assign_op_info_range(0xE8, 0xE8, ".{ decode_call_direct_in_seg,   .CALL,        }");
+    #insert #run assign_op_info_range(0xE9, 0xE9, ".{ decode_call_direct_in_seg,   .JMP,         }");
+    #insert #run assign_op_info_range(0xEB, 0xEB, ".{ decode_call_direct_in_seg,   .JMP,         }");
     #insert #run assign_op_info_range(0xE4, 0xE7, ".{ decode_in_out,               .INVALID,     }");
     #insert #run assign_op_info_range(0xEC, 0xEF, ".{ decode_in_out,               .INVALID,     }");
     #insert #run assign_op_info_range(0x70, 0x7F, ".{ decode_jump_cond_inc8,       .INVALID,     }");
@@ -291,6 +296,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x9D, 0x9D, ".{ decode_no_operands,          .POPF,        }");
     #insert #run assign_op_info_range(0x9E, 0x9E, ".{ decode_no_operands,          .SAHF,        }");
     #insert #run assign_op_info_range(0x9F, 0x9F, ".{ decode_no_operands,          .LAHF,        }");
+    #insert #run assign_op_info_range(0xC3, 0xC3, ".{ decode_no_operands,          .RET,         }");
+    #insert #run assign_op_info_range(0xCB, 0xCB, ".{ decode_no_operands,          .RET,         }");
     #insert #run assign_op_info_range(0xD4, 0xD4, ".{ decode_no_operands,          .AAM,         }");
     #insert #run assign_op_info_range(0xD5, 0xD5, ".{ decode_no_operands,          .AAD,         }");
     #insert #run assign_op_info_range(0xD7, 0xD7, ".{ decode_no_operands,          .XLAT,        }");
@@ -312,6 +319,8 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_reg_with_rm,          .CMP,         }");
     #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_reg_with_rm,          .XCHG,        }");
     #insert #run assign_op_info_range(0x88, 0x8C, ".{ decode_reg_with_rm,          .MOV,         }");
+    #insert #run assign_op_info_range(0xC2, 0xC2, ".{ decode_ret_pop_sp,           .RET,         }");
+    #insert #run assign_op_info_range(0xCA, 0xCA, ".{ decode_ret_pop_sp,           .RET,         }");
     #insert #run assign_op_info_range(0xA4, 0xA7, ".{ decode_string_manipulation,  .INVALID,     }");
     #insert #run assign_op_info_range(0xAA, 0xAF, ".{ decode_string_manipulation,  .INVALID,     }");
     #insert #run assign_op_info_range(0x40, 0x47, ".{ decode_unary_reg,            .INC,         }");
@@ -321,10 +330,6 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x8F, 0x8F, ".{ decode_unary_rm,             .INVALID,     }");
     #insert #run assign_op_info_range(0xF6, 0xF7, ".{ decode_unary_rm,             .INVALID,     }");
     #insert #run assign_op_info_range(0xFE, 0xFF, ".{ decode_unary_rm,             .INVALID,     }");
-
-    #insert #run assign_op_info_range(0xE8, 0xE8, ".{ decode_call_direct_in_seg,   .CALL,        }");
-    #insert #run assign_op_info_range(0xE9, 0xE9, ".{ decode_call_direct_in_seg,   .JMP,         }");
-    #insert #run assign_op_info_range(0xEB, 0xEB, ".{ decode_call_direct_in_seg,   .JMP,         }");
 }
 opcode_table: Opcode_Table;
 #run (){
@@ -666,6 +671,42 @@ decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     return 2 + extra_advance;
 }
 
+decode_call_direct_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    field_short := (<<head & 0b0000_0010) >> 1;
+
+    inst.desc = "direct within segment";
+    inst.operand_count = .UNARY;
+    inst.size = 2 + cast(u32) !field_short;
+
+    inst.dst = operand_increment(<<(head + 1), ifx !field_short then <<(head + 2) else 0);
+
+    if DEBUG {
+        print("%  ; {first_byte=0x%, increment=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), inst.dst.inc.val, inst.desc);
+    }
+
+    return cast(s32)inst.size;
+}
+
+decode_call_indirect_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    field_mod   := (<<(head + 1) & 0b1100_0000) >> 6;
+    field_rm    := (<<(head + 1) & 0b0000_0111);
+
+    inst.desc = "indirect within segment";
+    inst.operand_count = .UNARY;
+    inst.mode = memory_mode(field_mod);
+
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, 1);
+    inst.dst = rm;
+
+    if DEBUG {
+        print("%  ; {first_byte=0x% mod=% rm=%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), field_mod, field_rm, inst.desc);
+    }
+
+    return 2 + extra_advance;
+}
+
 decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_fv   := (<<head & 0b0000_1000) >> 3; // fixed:0, variable:1
     field_inst := (<<head & 0b0000_0010) >> 1; // IN:0, OUT:1
@@ -748,42 +789,6 @@ decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
     return 2;
 }
 
-decode_call_direct_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_short := (<<head & 0b0000_0010) >> 1;
-
-    inst.desc = "direct within segment";
-    inst.operand_count = .UNARY;
-    inst.size = 2 + cast(u32) !field_short;
-
-    inst.dst = operand_increment(<<(head + 1), ifx !field_short then <<(head + 2) else 0);
-
-    if DEBUG {
-        print("%  ; {increment=%} (%)\n",
-            instruction_to_string(inst), inst.dst.inc.val, inst.desc);
-    }
-
-    return cast(s32)inst.size;
-}
-
-decode_call_indirect_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_mod   := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_rm    := (<<(head + 1) & 0b0000_0111);
-
-    inst.desc = "indirect within segment";
-    inst.operand_count = .UNARY;
-    inst.mode = memory_mode(field_mod);
-
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, 1);
-    inst.dst = rm;
-
-    if DEBUG {
-        print("%  ; {mod=% rm=%} (%)\n",
-            instruction_to_string(inst), field_mod, field_rm, inst.desc);
-    }
-
-    return 2 + extra_advance;
-}
-
 decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_sr  := (<< head      & 0b0000_1000) >> 3; // 0:seg, 1:reg
     field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
@@ -810,9 +815,9 @@ decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     inst.src = rm;
 
     if DEBUG {
-        print("%  ; (%)\n",
-            instruction_to_string(inst), inst.desc);
-    }
+        print("%  ; {first_byte=0x%} (%)\n",
+            instruction_to_string(inst), formatHex(<<head), inst.desc);
+     }
 
     return 2 + extra_advance;
 }
@@ -972,6 +977,19 @@ decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     return 2 + extra_advance;
 }
 
+decode_ret_pop_sp :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
+    inst.desc = "return adding immed to stack pointer";
+    inst.operand_count = .UNARY;
+
+    inst.dst = operand_immediate(<<(head + 1), <<(head + 2));
+
+    if DEBUG {
+        print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
+    }
+
+    return 3;
+}
+
 decode_unary_reg ::    (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_reg := (<<(head) & 0b0000_0111);
 
@@ -1000,6 +1018,7 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     // HACK(ryan): Weird special case where we must entirely redirect TEST instructions to another
     // handler
     if (field_inst & 0b1111_1110_111) == 0b1111_0110_000 {
+        // TEST
         return decode_arith_imm_to_rm(inst, head);
     } else if field_inst == 0b1111_1111_010 {
         inst.type = .CALL;
