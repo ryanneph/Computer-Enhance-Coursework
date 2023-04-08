@@ -126,6 +126,7 @@ Instruction_Type :: enum u32 {
     RCL;          // @mnemonic:rcl
     RCR;          // @mnemonic:rcr
     RET;          // @mnemonic:ret
+    RETF;         // @mnemonic:retf
     ROL;          // @mnemonic:rol
     ROR;          // @mnemonic:ror
     SAHF;         // @mnemonic:sahf
@@ -217,6 +218,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.RCL]         = "rcl";
     strings[Instruction_Type.RCR]         = "rcr";
     strings[Instruction_Type.RET]         = "ret";
+    strings[Instruction_Type.RETF]        = "retf";
     strings[Instruction_Type.ROL]         = "rol";
     strings[Instruction_Type.ROR]         = "ror";
     strings[Instruction_Type.SAHF]        = "sahf";
@@ -999,6 +1001,9 @@ decode_no_operands :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.desc = "no operands";
     inst.operand_count = .ZERO;
 
+    if <<head == 0xCB
+        inst.type = .RETF;
+
     if DEBUG {
         print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
     }
@@ -1059,6 +1064,9 @@ decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 decode_ret_pop_sp :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.desc = "return adding immed to stack pointer";
     inst.operand_count = .UNARY;
+
+    if <<head == 0xCA
+        inst.type = .RETF;
 
     inst.dst = operand_immediate(<<(head + 1), <<(head + 2));
 
