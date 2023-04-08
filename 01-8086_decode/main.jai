@@ -65,6 +65,7 @@ Instruction_Type :: enum u32 {
     ADD;          // @mnemonic:add
     AND;          // @mnemonic:and
     CALL;         // @mnemonic:call
+    CALLF;        // @mnemonic:call far
     CBW;          // @mnemonic:cbw
     CLC;          // @mnemonic:clc
     CLD;          // @mnemonic:cld
@@ -93,6 +94,7 @@ Instruction_Type :: enum u32 {
     JLE_JNG;      // @mnemonic:jle
     JL_JNGE;      // @mnemonic:jl
     JMP;          // @mnemonic:jmp
+    JMPF;         // @mnemonic:jmp far
     JNBE_JA;      // @mnemonic:ja
     JNB_JAE_JNC;  // @mnemonic:jnb
     JNE_JNZ;      // @mnemonic:jne
@@ -157,6 +159,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.ADD]         = "add";
     strings[Instruction_Type.AND]         = "and";
     strings[Instruction_Type.CALL]        = "call";
+    strings[Instruction_Type.CALLF]       = "call far";
     strings[Instruction_Type.CBW]         = "cbw";
     strings[Instruction_Type.CLC]         = "clc";
     strings[Instruction_Type.CLD]         = "cld";
@@ -185,6 +188,7 @@ Mnemonic_Table :: struct {
     strings[Instruction_Type.JLE_JNG]     = "jle";
     strings[Instruction_Type.JL_JNGE]     = "jl";
     strings[Instruction_Type.JMP]         = "jmp";
+    strings[Instruction_Type.JMPF]        = "jmp far";
     strings[Instruction_Type.JNBE_JA]     = "ja";
     strings[Instruction_Type.JNB_JAE_JNC] = "jnb";
     strings[Instruction_Type.JNE_JNZ]     = "jne";
@@ -540,7 +544,9 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             }
             return builder_to_string(*builder);
         }
-        case .INVALID; assert(false, "Operand type has not been set");
+        case .INVALID;
+            assert(false, "Operand type has not been set");
+            return "INVALID";
     }
 };
 
@@ -1119,6 +1125,7 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.operand_count = .UNARY;
     inst.mode = memory_mode(field_mod);
 
+    explicit_size := true;
     if field_inst == {
         case 0b1000_1111_000;
             inst.type = .POP;
@@ -1154,10 +1161,17 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
         case 0b1111_1111_110;
             inst.type = .PUSH;
+
+        case 0b1111_1111_011;
+            inst.type = .CALLF;
+            explicit_size = false;
+        case 0b1111_1111_101;
+            inst.type = .JMPF;
+            explicit_size = false;
     }
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w, explicit_size=true);
+    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w, explicit_size);
     inst.dst = rm;
 
     if DEBUG {
