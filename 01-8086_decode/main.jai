@@ -254,6 +254,8 @@ Instruction_Flags :: enum_flags u32 {
 
     STRING_BYTE;
     STRING_WORD;
+
+    SEGMENT_OVERRIDE;
 }
 
 Instruction :: struct {
@@ -262,6 +264,8 @@ Instruction :: struct {
     mode: Memory_Mode;
     flags: Instruction_Flags;
     size: u32;
+
+    segment_override: u8;
 
     // TODO(ryan): maybe store *Opcode_Info for indirection instead?
     desc: string;
@@ -501,10 +505,14 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             else if operand.size == .WORD
                 print_to_builder(*builder, "word ");
 
+            segment_prefix := "";
+            if inst.flags & .SEGMENT_OVERRIDE
+                segment_prefix = tprint("%:", segment(inst.segment_override));
+
             if (inst.mode == .MEM_DIRECT) {
-                print_to_builder(*builder, "[%]", mem.direct);
+                print_to_builder(*builder, "[%0%]", segment_prefix, mem.direct);
             } else {
-                print_to_builder(*builder, "[%", mem.base1);
+                print_to_builder(*builder, "[%0%", segment_prefix, mem.base1);
                 if mem.base2.count
                     print_to_builder(*builder, " + %", mem.base2);
                 if mem.disp {
@@ -1137,8 +1145,9 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 //
 // ENTRYPOINTS
 //
-decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, advance_count: s32) {
+decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, segment_override: u8, advance_count: s32) {
     flags: Instruction_Flags;
+    segment_override: u8 = 0;
     advance_count: s32 = 0;
     while true {
         if <<head == {
@@ -1146,16 +1155,28 @@ decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, advance_count: s32
                 flags |= .REPEAT_NOTZERO;
             case 0b1111_0011;
                 flags |= .REPEAT_ZERO;
+            case 0b0010_1110;
+                segment_override = 1; // CS
+                flags |= .SEGMENT_OVERRIDE;
+            case 0b0011_1110;
+                segment_override = 3; // DS
+                flags |= .SEGMENT_OVERRIDE;
+            case 0b0010_0110;
+                segment_override = 0; // ES
+                flags |= .SEGMENT_OVERRIDE;
+            case 0b0011_0110;
+                segment_override = 2; // SS
+                flags |= .SEGMENT_OVERRIDE;
             case; break;
         }
         advance_count += 1;
         head += 1;
     }
-    return flags, advance_count;
+    return flags, segment_override, advance_count;
 }
 
 decode_once :: (head: *u8) -> (Instruction, advance: s32) {
-    flags, prefix_advance := decode_all_prefix_bytes(head);
+    flags, segment_override, prefix_advance := decode_all_prefix_bytes(head);
     head += prefix_advance;
 
     opcode := <<head;
@@ -1168,6 +1189,7 @@ decode_once :: (head: *u8) -> (Instruction, advance: s32) {
     inst: Instruction;
     inst.type = op_info.type; // NOTE(ryan): will be modified by decode proc if initially .INVALID in decode table
     inst.flags = flags;
+    inst.segment_override = segment_override; // ignored unless (flags & .SEGMENT_OVERRIDE)
     advance_count := op_info.decode(*inst, head);
 
     assert(inst.type != .INVALID, "Instruction dispatch handler must resolve instruction if not resolvable automatically from the first byte");
