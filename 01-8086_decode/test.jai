@@ -19,7 +19,9 @@ assemble :: (asm_path: string, output_path: string) -> bool {
     return true;
 }
 
-run_one_test :: (actual_asm_path: string) -> bool {
+run_one_decode_test :: (test_file: Test_File) -> bool {
+    actual_asm_path := test_file.filename;
+
     temp_dirname := "test_tmp";
     asm_filename := path_filename(actual_asm_path);
 
@@ -44,8 +46,7 @@ run_one_test :: (actual_asm_path: string) -> bool {
 
     // run our disassembler
     if DEBUG  print("Disassembling '%' to '%':\n", temp_encoded_path, temp_our_asm_path);
-    bytes := file_read_all_as_bytes(temp_encoded_path);
-    disassemble(bytes, output_asm_path=temp_our_asm_path);
+    disassemble_file(temp_encoded_path, output_asm_path=temp_our_asm_path);
 
     // assemble our disassembled asm to machine code
     if DEBUG  print("Assembling input '%' to '%'\n", temp_our_asm_path, temp_our_encoded_path);
@@ -68,17 +69,68 @@ run_one_test :: (actual_asm_path: string) -> bool {
     return true;
 }
 
-run_tests :: (asm_filenames: []string) {
+run_one_exec_test :: (test_file: Test_File) -> bool {
+    return false;
+}
+
+run_one_test :: (test_file: Test_File) -> (fail_count: s64) {
+    fail_count := 0;
+
+    run_test :: (name: string, enabled: bool, proc: #type (Test_File) -> bool) #expand {
+        if !enabled
+            return;
+        success := proc(test_file);
+        if !success {
+            print("  -- % test failed\n", name);
+            fail_count += 1;
+        }
+    }
+
+    run_test("decode", test_file.decode, run_one_decode_test);
+    run_test("exec",   test_file.exec,   run_one_exec_test);
+
+    return fail_count;
+}
+
+TEST_PATH_PREFIX :: "../cmuratori-computer_enhance/perfaware/part1/";
+Test_File :: struct {
+    filename: string;
+    decode:   bool;
+    exec:     bool;
+}
+test_files :: Test_File.[
+    .{ "listing_0037_single_register_mov.asm",  true,  false, },
+    .{ "listing_0038_many_register_mov.asm",    true,  false, },
+    .{ "listing_0039_more_movs.asm",            true,  false, },
+    .{ "listing_0040_challenge_movs.asm",       true,  false, },
+    .{ "listing_0041_add_sub_cmp_jnz.asm",      true,  false, },
+    .{ "listing_0042_completionist_decode.asm", true,  false, },
+    .{ "listing_0043_immediate_movs.asm",       true,  true, },
+];
+
+run_tests :: () {
     DEBUG = false;
     print("RUNNING TESTS:\n");
-    for asm_filenames {
-        print("Testing '%'\n", it);
-        if !run_one_test(it) {
-            print("  Test FAILED!\n");
+
+    total_fail_count := 0;
+    for test_files {
+        test_file := it;
+        test_file.filename = tprint("%/%", TEST_PATH_PREFIX, it.filename);
+
+        print("Testing '%'\n", test_file.filename);
+        fail_count := run_one_test(test_file);
+        if fail_count {
+            print("  % tests FAILED!\n", fail_count);
+            total_fail_count += fail_count;
         } else {
-            print("  Test PASSED!\n");
+            print("  All tests PASSED!\n");
         }
         print("\n");
     }
+
+    if total_fail_count
+        print("TEST RESULTS: % tests FAILED!\n", total_fail_count);
+    else
+        print("TEST_RESULTS: all tests PASSED!\n");
 }
 

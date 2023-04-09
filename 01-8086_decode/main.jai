@@ -1294,7 +1294,9 @@ print_instruction :: (builder: *String_Builder, inst: Instruction) {
     }
 }
 
-disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
+disassemble_file :: (filename: string, output_asm_path: string="out.asm") {
+    bytes: []u8 = file_read_all_as_bytes(filename);
+
     builder: String_Builder;
 
     offset := 0;
@@ -1317,27 +1319,45 @@ disassemble :: (bytes: []u8, output_asm_path: string="out.asm") {
     file_close(*file);
 }
 
-main :: () {
-    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0037_single_register_mov";
-    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0038_many_register_mov";
-    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0039_more_movs";
-    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs";
-    // f := "../cmuratori-computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz";
-    f := "../cmuratori-computer_enhance/perfaware/part1/listing_0042_completionist_decode";
+execute_file :: (filename: string) {
+    print("EXECUTION NOT YET IMPLEMENTED\n");
+}
 
+print_usage :: (args: []string) {
+    print(#string ENDUSAGE
+usage:  % <command> [options]
+commands:
+  decode  decode the file into 8086 assembly
+          "decode <file>"
+  exec    run all known tests
+          "exec <file>"
+  test    run all known tests
+ENDUSAGE, args[0]);
+}
+
+arg_parsing_error :: (args: []string, message: string, exit_code: s32 = 1) {
+    print_usage(args);
+    print("\nArgument Error: %\n", message);
+    exit(exit_code);
+}
+
+main :: () {
     args := get_command_line_arguments();
-    if args.count > 1 && equal(args[1], "test") {
-        input_files := string.[
-            "../cmuratori-computer_enhance/perfaware/part1/listing_0037_single_register_mov.asm",
-            "../cmuratori-computer_enhance/perfaware/part1/listing_0038_many_register_mov.asm",
-            "../cmuratori-computer_enhance/perfaware/part1/listing_0039_more_movs.asm",
-            "../cmuratori-computer_enhance/perfaware/part1/listing_0040_challenge_movs.asm",
-            "../cmuratori-computer_enhance/perfaware/part1/listing_0041_add_sub_cmp_jnz.asm",
-            "../cmuratori-computer_enhance/perfaware/part1/listing_0042_completionist_decode.asm",
-        ];
-        run_tests(input_files);
-    } else {
-        bytes := file_read_all_as_bytes(f);
-        disassemble(bytes);
+    if args.count <= 1
+        arg_parsing_error(args, "not enough arguments provided");
+
+    if args[1] == {
+        case "decode";
+            if (args.count < 3)
+                arg_parsing_error(args, "not enough arguments provided");
+            disassemble_file(args[2]);
+        case "exec";
+            if (args.count < 3)
+                arg_parsing_error(args, "not enough arguments provided");
+            execute_file(args[2]);
+        case "test";
+            run_tests();
+        case;
+            arg_parsing_error(args, tprint("unknown command '%'\n", args[1]));
     }
 }
