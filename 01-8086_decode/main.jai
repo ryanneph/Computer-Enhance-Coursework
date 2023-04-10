@@ -1319,8 +1319,36 @@ disassemble_file :: (filename: string, output_asm_path: string="out.asm") {
     file_close(*file);
 }
 
+Processor_State :: struct {
+
+}
+
+exec_mov :: (state: Processor_State, inst: Instruction) {
+}
+
+exec_instruction :: (state: *Processor_State, inst: Instruction) {
+    if (inst.type == .MOV) {
+        exec_mov(state, inst);
+    } else
+        assert(false, "EXEC for instruction type '%' is not implemented.\n", inst.type);
+}
+
 execute_file :: (filename: string) {
-    print("EXECUTION NOT YET IMPLEMENTED\n");
+    bytes: []u8 = file_read_all_as_bytes(filename);
+
+    state: Processor_State;
+
+    offset := 0;
+    while offset < bytes.count {
+        head := bytes.data + offset;
+        inst, advance := decode_once(head);
+        offset += advance;
+
+        if DEBUG
+            print("exec:  %\n", instruction_to_string(inst));
+
+        exec_instruction(*state, inst);
+    }
 }
 
 print_usage :: (args: []string) {
