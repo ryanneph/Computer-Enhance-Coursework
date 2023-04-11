@@ -404,19 +404,16 @@ memory_mode :: inline (mod: u8) -> Memory_Mode {
     return cast(Memory_Mode)mod;
 }
 
-// NOTE(ryan): directly indexed by "(reg << 1) | field_w".
-register_name_table :: string.[
-                //   reg  : register encoding
-                //      w : width (0: byte, 1: word)
-    "al", "ax", // 0b000w
-    "cl", "cx", // 0b001w
-    "dl", "dx", // 0b010w
-    "bl", "bx", // 0b011w
-    "ah", "sp", // 0b100w
-    "ch", "bp", // 0b101w
-    "dh", "si", // 0b110w
-    "bh", "di", // 0b111w
-];
+// [NUM_REGISTERS]string;  addressed by register.bit_encoding
+#placeholder register_name_table;
+Register_Region :: struct {
+    offset: u8;
+    size:   u8;
+}
+
+// [NUM_REGISTERS]Register_Region;  addressed by register.bit_encoding
+#placeholder register_region_table;
+
 // NOTE(ryan): directly indexed by 2-bit "seg".
 segment_name_table :: string.[
           //   reg  : register encoding
