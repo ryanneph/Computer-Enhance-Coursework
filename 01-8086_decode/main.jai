@@ -5,8 +5,80 @@
 #load "test.jai";
 
 DEBUG := true;
+formatHex :: #bake_arguments formatInt(base=16);
 
-Register :: string;
+Register :: enum {
+    INVALID :: 0;
+
+    FIRST_REGISTER :: 1;
+    AL :: FIRST_REGISTER; AX; CL; CX; DL; DX; BL; BX; AH; SP; CH; BP; DH; SI; BH; DI;
+
+    FIRST_SEGMENT;
+    ES :: FIRST_SEGMENT; CS; SS; DS; // segment registers
+}
+Register_Definition :: struct {
+    name: string;
+    offset: u8;
+    size:   u8;
+}
+Registers :: struct {
+    // addressed by field_reg(3-bit) | field_w(1-bit)
+    defs: [20]Register_Definition;
+
+    defs[Register.AL - Register.FIRST_REGISTER] = .{"al",  0, 1};
+    defs[Register.AX - Register.FIRST_REGISTER] = .{"ax",  0, 2};
+    defs[Register.CL - Register.FIRST_REGISTER] = .{"cl",  4, 1};
+    defs[Register.CX - Register.FIRST_REGISTER] = .{"cx",  4, 2};
+    defs[Register.DL - Register.FIRST_REGISTER] = .{"dl",  6, 1};
+    defs[Register.DX - Register.FIRST_REGISTER] = .{"dx",  6, 2};
+    defs[Register.BL - Register.FIRST_REGISTER] = .{"bl",  2, 1};
+    defs[Register.BX - Register.FIRST_REGISTER] = .{"bx",  2, 2};
+    defs[Register.AH - Register.FIRST_REGISTER] = .{"ah",  1, 1};
+    defs[Register.SP - Register.FIRST_REGISTER] = .{"sp",  8, 2};
+    defs[Register.CH - Register.FIRST_REGISTER] = .{"ch",  5, 1};
+    defs[Register.BP - Register.FIRST_REGISTER] = .{"bp", 10, 2};
+    defs[Register.DH - Register.FIRST_REGISTER] = .{"dh",  7, 1};
+    defs[Register.SI - Register.FIRST_REGISTER] = .{"si", 12, 2};
+    defs[Register.BH - Register.FIRST_REGISTER] = .{"bh",  3, 1};
+    defs[Register.DI - Register.FIRST_REGISTER] = .{"di", 14, 2};
+
+    defs[Register.ES - Register.FIRST_REGISTER] = .{"es", 16, 2};
+    defs[Register.CS - Register.FIRST_REGISTER] = .{"cs", 18, 2};
+    defs[Register.SS - Register.FIRST_REGISTER] = .{"ss", 20, 2};
+    defs[Register.DS - Register.FIRST_REGISTER] = .{"ds", 22, 2};
+}
+registers: Registers;
+
+register :: (field_reg: u8, field_word: u8) -> Register {
+    assert(field_word <= 1);
+    index := (field_reg << 1) | field_word;
+    assert(index < registers.defs.count);
+
+    return cast(Register)(cast(s32)Register.FIRST_REGISTER + index);
+}
+register_name :: (reg: Register) -> string {
+    assert(reg != .INVALID);
+    register_index := cast(s32)reg - 1;
+    assert(register_index < registers.defs.count);
+    return registers.defs[register_index].name;
+}
+
+segment :: inline (field_seg: u8) -> Register {
+    assert(field_seg < 4);
+    return cast(Register)(cast(s32)Register.FIRST_SEGMENT + field_seg);
+}
+
+effective_address_table :: Memory.[
+    .{ reg1 = .BX, reg2 = .SI,      },
+    .{ reg1 = .BX, reg2 = .DI,      },
+    .{ reg1 = .BP, reg2 = .SI,      },
+    .{ reg1 = .BP, reg2 = .DI,      },
+    .{ reg1 = .SI, reg2 = .INVALID, },
+    .{ reg1 = .DI, reg2 = .INVALID, },
+    .{ reg1 = .BP, reg2 = .INVALID, },
+    .{ reg1 = .BX, reg2 = .INVALID, },
+];
+
 Memory_Mode :: enum {
     MEM_NO_DISP :: 0b00;
     MEM_DISP_8  :: 0b01;
@@ -14,10 +86,15 @@ Memory_Mode :: enum {
     REGISTER    :: 0b11;
     MEM_DIRECT;
 }
+memory_mode :: inline (mod: u8) -> Memory_Mode {
+    assert(!(mod & ~0x03));
+    return cast(Memory_Mode)mod;
+}
+
 Memory :: union {
     struct {
-        base1: Register;
-        base2: Register;
+        reg1: Register;
+        reg2: Register;
         disp: u16;
     };
     direct: u16;
@@ -276,7 +353,7 @@ Instruction :: struct {
     flags: Instruction_Flags;
     size: u32;
 
-    segment_override: u8;
+    segment_override: Register;
 
     // TODO(ryan): maybe store *Opcode_Info for indirection instead?
     desc: string;
@@ -397,58 +474,12 @@ opcode_table: Opcode_Table;
     print("There are % of % unimplemented instructions\n\n", vacant_count, opcode_table.ops.count);
 }();
 
-formatHex :: #bake_arguments formatInt(base=16);
 
-memory_mode :: inline (mod: u8) -> Memory_Mode {
-    assert(!(mod & ~0x03));
-    return cast(Memory_Mode)mod;
-}
-
-// [NUM_REGISTERS]string;  addressed by register.bit_encoding
-#placeholder register_name_table;
-Register_Region :: struct {
-    offset: u8;
-    size:   u8;
-}
-
-// [NUM_REGISTERS]Register_Region;  addressed by register.bit_encoding
-#placeholder register_region_table;
-
-// NOTE(ryan): directly indexed by 2-bit "seg".
-segment_name_table :: string.[
-          //   reg  : register encoding
-          //      w : width (0: byte, 1: word)
-    "es", // 0b00
-    "cs", // 0b01
-    "ss", // 0b10
-    "ds", // 0b11
-];
-effective_address_table :: Memory.[
-    .{ base1 = "bx", base2 = "si", },
-    .{ base1 = "bx", base2 = "di", },
-    .{ base1 = "bp", base2 = "si", },
-    .{ base1 = "bp", base2 = "di", },
-    .{ base1 = "si", },
-    .{ base1 = "di", },
-    .{ base1 = "bp", },
-    .{ base1 = "bx", },
-];
-register :: (reg: u8, word: u8) -> Register {
-    assert(word <= 1);
-    index := (reg << 1) | word;
-    assert(index < register_name_table.count);
-
-    return register_name_table[index];
-}
-segment :: inline (seg: u8) -> Register {
-    assert(seg < 4);
-    return segment_name_table[seg];
-}
 operand_register :: inline (reg: u8, word: u8) -> Operand {
     return Operand.{ type = .REGISTER, reg = register(reg, word) };
 }
-operand_register :: inline (name: string) -> Operand {
-    return Operand.{ type = .REGISTER, reg = name };
+operand_register :: inline (reg: Register) -> Operand {
+    return Operand.{ type = .REGISTER, reg = reg };
 }
 operand_segment :: inline (seg: u8) -> Operand {
     return Operand.{ type = .REGISTER, reg = segment(seg) };
@@ -485,7 +516,7 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
 
     if #complete operand.type == {
         case .REGISTER;
-            return operand.reg;
+            return register_name(operand.reg);
         case .INCREMENT;
             builder: String_Builder;
             builder.allocator = temporary_allocator;
@@ -522,14 +553,14 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
 
             segment_prefix := "";
             if inst.flags & .SEGMENT_OVERRIDE
-                segment_prefix = tprint("%:", segment(inst.segment_override));
+                segment_prefix = tprint("%:", register_name(inst.segment_override));
 
             if inst.mode == .MEM_DIRECT {
                 print_to_builder(*builder, "[%0%]", segment_prefix, mem.direct);
             } else {
-                print_to_builder(*builder, "[%0%", segment_prefix, mem.base1);
-                if mem.base2.count
-                    print_to_builder(*builder, " + %", mem.base2);
+                print_to_builder(*builder, "[%0%", segment_prefix, register_name(mem.reg1));
+                if mem.reg2 != .INVALID
+                    print_to_builder(*builder, " + %", register_name(mem.reg2));
                 if mem.disp {
                     disp := ifx inst.mode == .MEM_DISP_8 then
                         cast,no_check(s8)mem.disp else
@@ -616,7 +647,7 @@ decode_arith_imm_to_accum :: (inst: *Instruction, head: *u8) -> (advance_count: 
 
     inst.desc = "immediate to accumulator";
 
-    inst.dst = operand_register(ifx field_w then "ax" else "al");
+    inst.dst = operand_register(ifx field_w then Register.AX else .AL);
     inst.src = operand_immediate(field_low, field_high);
 
     if DEBUG {
@@ -686,7 +717,7 @@ decode_arith_reg_with_accum :: (inst: *Instruction, head: *u8) -> (advance_count
     field_reg := <<head & 0b0000_0111;
 
     inst.desc = "register with accumulator";
-    inst.dst = operand_register("ax");
+    inst.dst = operand_register(.AX);
     inst.src = operand_register(field_reg, 1);
 
     if DEBUG {
@@ -723,7 +754,7 @@ decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w, explicit_size=true);
 
     inst.desc = "bit manipulation of register/memory by 1 or value in cl register";
-    inst.src = ifx !field_v then operand_immediate(1) else operand_register("cl");
+    inst.src = ifx !field_v then operand_immediate(1) else operand_register(.CL);
     inst.dst = rm;
 
     if DEBUG {
@@ -790,14 +821,14 @@ decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_inst := (<<head & 0b0000_0010) >> 1; // IN:0, OUT:1
     field_w    :=  <<head & 0b0000_0001;
 
-    accum := operand_register(ifx field_w then "ax" else "al");
+    accum := operand_register(ifx field_w then Register.AX else .AL);
 
     inst.type = ifx field_inst then Instruction_Type.OUT else .IN;
 
     port: Operand;
     if field_fv {
         inst.desc = "accumulator with variable i/o port addressed by register";
-        port = operand_register("dx");
+        port = operand_register(.DX);
     } else {
         inst.desc = "accumulator with fixed i/o port";
         port = operand_immediate(<<(head + 1));
@@ -910,7 +941,7 @@ decode_mov_accumulator :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     field_low  := <<(head + 1);
     field_high := <<(head + 2);
 
-    reg := operand_register(ifx field_w then "ax" else "al");
+    reg := operand_register(ifx field_w then Register.AX else Register.AL);
     mem := operand_memory_direct(immediate(field_low, field_high));
 
     inst.dst = ifx field_to_mem then mem else reg;
@@ -1203,9 +1234,9 @@ decode_jump_direct_far :: (inst: *Instruction, head: *u8) -> (advance_count: s32
 //
 // ENTRYPOINTS
 //
-decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, segment_override: u8, advance_count: s32) {
+decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, segment_override: Register, advance_count: s32) {
     flags: Instruction_Flags;
-    segment_override: u8 = 0;
+    segment_override := Register.INVALID;
     advance_count: s32 = 0;
     while true {
         if <<head == {
@@ -1216,16 +1247,16 @@ decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, segment_override: 
             case 0b1111_0011;
                 flags |= .REPEAT_ZERO;
             case 0b0010_1110;
-                segment_override = 1; // CS
+                segment_override = .CS;
                 flags |= .SEGMENT_OVERRIDE;
             case 0b0011_1110;
-                segment_override = 3; // DS
+                segment_override = .DS;
                 flags |= .SEGMENT_OVERRIDE;
             case 0b0010_0110;
-                segment_override = 0; // ES
+                segment_override = .ES;
                 flags |= .SEGMENT_OVERRIDE;
             case 0b0011_0110;
-                segment_override = 2; // SS
+                segment_override = .SS;
                 flags |= .SEGMENT_OVERRIDE;
             case; break;
         }
