@@ -4,7 +4,9 @@
 #load "file.jai";
 #load "test.jai";
 
-DEBUG := true;
+DEBUG_DECODE := true;
+DEBUG_EXEC   := true;
+DEBUG_TEST   := false;
 formatHex :: #bake_arguments formatInt(base=16);
 
 Register :: enum {
@@ -56,13 +58,12 @@ register :: (field_reg: u8, field_word: u8) -> Register {
 
     return cast(Register)(cast(s32)Register.FIRST_REGISTER + index);
 }
-register_name :: (reg: Register) -> string {
+register_def :: (reg: Register) -> Register_Definition {
     assert(reg != .INVALID);
-    register_index := cast(s32)reg - 1;
+    register_index := cast(s32)reg - cast(s32)Register.FIRST_REGISTER;
     assert(register_index < registers.defs.count);
-    return registers.defs[register_index].name;
+    return registers.defs[register_index];
 }
-
 segment :: inline (field_seg: u8) -> Register {
     assert(field_seg < 4);
     return cast(Register)(cast(s32)Register.FIRST_SEGMENT + field_seg);
@@ -516,7 +517,7 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
 
     if #complete operand.type == {
         case .REGISTER;
-            return register_name(operand.reg);
+            return register_def(operand.reg).name;
         case .INCREMENT;
             builder: String_Builder;
             builder.allocator = temporary_allocator;
@@ -553,14 +554,14 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
 
             segment_prefix := "";
             if inst.flags & .SEGMENT_OVERRIDE
-                segment_prefix = tprint("%:", register_name(inst.segment_override));
+                segment_prefix = tprint("%:", register_def(inst.segment_override).name);
 
             if inst.mode == .MEM_DIRECT {
                 print_to_builder(*builder, "[%0%]", segment_prefix, mem.direct);
             } else {
-                print_to_builder(*builder, "[%0%", segment_prefix, register_name(mem.reg1));
+                print_to_builder(*builder, "[%0%", segment_prefix, register_def(mem.reg1).name);
                 if mem.reg2 != .INVALID
-                    print_to_builder(*builder, " + %", register_name(mem.reg2));
+                    print_to_builder(*builder, " + %", register_def(mem.reg2).name);
                 if mem.disp {
                     disp := ifx inst.mode == .MEM_DISP_8 then
                         cast,no_check(s8)mem.disp else
@@ -650,7 +651,7 @@ decode_arith_imm_to_accum :: (inst: *Instruction, head: *u8) -> (advance_count: 
     inst.dst = operand_register(ifx field_w then Register.AX else .AL);
     inst.src = operand_immediate(field_low, field_high);
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, inst=% w=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_inst, field_w, inst.desc);
     }
@@ -704,7 +705,7 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     inst.src = imm;
     inst.dst = rm;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, s=% w=%, mod=% inst=% rm=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_s, field_w, field_mod,
             field_inst, field_rm, inst.desc);
@@ -720,7 +721,7 @@ decode_arith_reg_with_accum :: (inst: *Instruction, head: *u8) -> (advance_count
     inst.dst = operand_register(.AX);
     inst.src = operand_register(field_reg, 1);
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, reg=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_reg, inst.desc);
     }
@@ -757,7 +758,7 @@ decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.src = ifx !field_v then operand_immediate(1) else operand_register(.CL);
     inst.dst = rm;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, v=% w=%, mod=% inst=% rm=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_v, field_w, field_mod,
             field_inst, field_rm, inst.desc);
@@ -775,7 +776,7 @@ decode_call_direct_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: 
 
     inst.dst = operand_increment(<<(head + 1), ifx !field_short then <<(head + 2) else 0);
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, increment=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), inst.dst.inc.val, inst.desc);
     }
@@ -794,7 +795,7 @@ decode_call_indirect_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count
     rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, 1);
     inst.dst = rm;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x% mod=% rm=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_mod, field_rm, inst.desc);
     }
@@ -808,7 +809,7 @@ decode_unary_imm8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     inst.dst = operand_immediate(<<(head + 1));
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), inst.desc);
     }
@@ -837,7 +838,7 @@ decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.dst = ifx field_inst then port  else accum;
     inst.src = ifx field_inst then accum else port;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, field_inst=% field_w=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_inst, field_w, inst.desc);
     }
@@ -890,7 +891,7 @@ decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
 
     inst.dst = operand_increment(<<(head +1));
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, increment=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), inst.dst.inc.val, inst.desc);
     }
@@ -923,7 +924,7 @@ decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, 1);
     inst.src = rm;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), inst.desc);
      }
@@ -947,7 +948,7 @@ decode_mov_accumulator :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     inst.dst = ifx field_to_mem then mem else reg;
     inst.src = ifx field_to_mem then reg else mem;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, to_mem=%, w=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_to_mem, field_w, inst.desc);
     }
@@ -967,7 +968,7 @@ decode_mov_imm_to_reg :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
     inst.src = operand_immediate(field_low, field_high);
     advance_count := cast(s32)(ifx field_w then 3 else 2);
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, w=% reg=%, low=%, high=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_w, field_reg,
             field_low, field_high, inst.desc);
@@ -993,7 +994,7 @@ decode_mov_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) 
     inst.src = imm;
     offset += extra_advance2;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, w=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_w, inst.desc);
     }
@@ -1024,7 +1025,7 @@ decode_string_manipulation :: (inst: *Instruction, head: *u8) -> (advance_count:
     inst.operand_count = .ZERO;
     inst.flags |= ifx !field_w then Instruction_Flags.STRING_BYTE else .STRING_WORD;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
     }
 
@@ -1038,7 +1039,7 @@ decode_no_operands :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     if <<head == 0xCB
         inst.type = .RETF;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
     }
 
@@ -1056,7 +1057,7 @@ decode_push_pop_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     inst.dst = operand_segment(field_seg);
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, seg=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_seg, inst.desc);
     }
@@ -1086,7 +1087,7 @@ decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.dst = ifx field_d then reg else rm;
     inst.src = ifx field_d then rm  else reg;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_d, field_w,
             field_mod, field_reg, field_rm, inst.desc);
@@ -1104,7 +1105,7 @@ decode_ret_pop_sp :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     inst.dst = operand_immediate(<<(head + 1), <<(head + 2));
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
     }
 
@@ -1119,7 +1120,7 @@ decode_unary_reg ::    (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     inst.dst = operand_register(field_reg, 1);
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, reg=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_reg, inst.desc);
     }
@@ -1202,7 +1203,7 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w, explicit_size);
     inst.dst = rm;
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, w=% mod=% rm=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), field_w, field_mod, field_rm, inst.desc);
     }
@@ -1224,7 +1225,7 @@ decode_jump_direct_far :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     inst.dst = operand_immediate(field_ip_lo, field_ip_hi);
     inst.dst.far_segment = immediate(field_cs_lo, field_cs_hi);
 
-    if DEBUG {
+    if DEBUG_DECODE {
         print("%  ; {first_byte=%} (%)\n",
             instruction_to_string(inst), formatHex(<<head), inst.desc);
     }
@@ -1348,12 +1349,74 @@ disassemble_file :: (filename: string, output_asm_path: string="out.asm") {
 }
 
 Processor_State :: struct {
+    register_memory: [24]u8;
+    memory: [1024 * 1024]u8;
+    flags: u8;
+}
+print_processor_state :: (state: Processor_State) {
+    print_register_word :: (reg: Register, low: Register = .INVALID, high: Register = .INVALID) #expand {
+        def := register_def(reg);
+        assert(def.size == 2);
 
+        value: u16 = state.register_memory[def.offset];
+        low_value: u8 = cast,no_check(u8) value;
+        high_value : u8 = xx (value >> 8);
+
+        print("    %: 0x% (%) [low=%, high=%]\n", def.name, formatHex(value, minimum_digits=4),
+            formatInt(value, minimum_digits=5, padding=#char " "),
+            formatInt(low_value, minimum_digits=3, padding=#char " "),
+            formatInt(high_value, minimum_digits=3, padding=#char " "));
+    }
+
+    print("Processor State\n");
+    print_register_word(.AX);
+    print_register_word(.BX);
+    print_register_word(.CX);
+    print_register_word(.DX);
+
+    print_register_word(.SP);
+    print_register_word(.BP);
+    print_register_word(.SI);
+    print_register_word(.DI);
 }
 
-exec_mov :: (state: Processor_State, inst: Instruction) {
-}
+exec_mov :: (state: *Processor_State, inst: Instruction) {
+    store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
+        if operand.type == {
+            case .REGISTER;
+                reg := register_def(operand.reg);
+                state.register_memory[reg.offset] = cast(u8)(value & 0xFF);
+                if reg.size >= 2
+                    state.register_memory[reg.offset + 1] = cast(u8)((value >> 8) & 0xFF);
+        }
 
+    }
+
+    load_operand :: (state: *Processor_State, operand: Operand) -> u16 {
+        if operand.type == {
+            case .IMMEDIATE;
+                return operand.imm.val;
+            case .REGISTER;
+                reg := register_def(operand.reg);
+                value: u16 =  state.register_memory[reg.offset];
+                if reg.size >= 2
+                    value |= (state.register_memory[reg.offset + 1]) << 8;
+                return value;
+        }
+        return 1 << 16 - 1;
+    }
+
+    original: u16;
+    if DEBUG_EXEC
+        original = load_operand(state, inst.dst);
+
+    value := load_operand(state, inst.src);
+    store_operand(state, inst.dst, value);
+
+    if DEBUG_EXEC
+        print("% ; %:0x%->0x%\n", instruction_to_string(inst), operand_to_string(inst, inst.dst),
+            formatHex(original), formatHex(value));
+}
 exec_instruction :: (state: *Processor_State, inst: Instruction) {
     if (inst.type == .MOV) {
         exec_mov(state, inst);
@@ -1364,6 +1427,7 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
 execute_file :: (filename: string) {
     bytes: []u8 = file_read_all_as_bytes(filename);
 
+    DEBUG_DECODE = false;
     state: Processor_State;
 
     offset := 0;
@@ -1372,11 +1436,11 @@ execute_file :: (filename: string) {
         inst, advance := decode_once(head);
         offset += advance;
 
-        if DEBUG
-            print("exec:  %\n", instruction_to_string(inst));
-
         exec_instruction(*state, inst);
     }
+
+    print("\n");
+    print_processor_state(state);
 }
 
 print_usage :: (args: []string) {
@@ -1385,7 +1449,7 @@ usage:  % <command> [options]
 commands:
   decode  decode the file into 8086 assembly
           "decode <file>"
-  exec    run all known tests
+  exec    execute the 8086 assembled binary file
           "exec <file>"
   test    run all known tests
 ENDUSAGE, args[0]);
@@ -1405,11 +1469,11 @@ main :: () {
     if args[1] == {
         case "decode";
             if (args.count < 3)
-                arg_parsing_error(args, "not enough arguments provided");
+            arg_parsing_error(args, "not enough arguments provided");
             disassemble_file(args[2]);
         case "exec";
             if (args.count < 3)
-                arg_parsing_error(args, "not enough arguments provided");
+            arg_parsing_error(args, "not enough arguments provided");
             execute_file(args[2]);
         case "test";
             run_tests();
@@ -1417,3 +1481,4 @@ main :: () {
             arg_parsing_error(args, tprint("unknown command '%'\n", args[1]));
     }
 }
+

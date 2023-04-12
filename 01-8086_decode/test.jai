@@ -38,18 +38,18 @@ run_one_decode_test :: (test_file: Test_File) -> bool {
     copy_file(actual_asm_path, temp_asm_path);
 
     // assemble GT asm to machine code
-    if DEBUG  print("Assembling input '%' to '%'\n", temp_asm_path, temp_encoded_path);
+    if DEBUG_TEST  print("Assembling input '%' to '%'\n", temp_asm_path, temp_encoded_path);
     if !assemble(temp_asm_path, temp_encoded_path) {
         print("Error assembling '%'\n", temp_asm_path);
         return false;
     }
 
     // run our disassembler
-    if DEBUG  print("Disassembling '%' to '%':\n", temp_encoded_path, temp_our_asm_path);
+    if DEBUG_TEST  print("Disassembling '%' to '%':\n", temp_encoded_path, temp_our_asm_path);
     disassemble_file(temp_encoded_path, output_asm_path=temp_our_asm_path);
 
     // assemble our disassembled asm to machine code
-    if DEBUG  print("Assembling input '%' to '%'\n", temp_our_asm_path, temp_our_encoded_path);
+    if DEBUG_TEST  print("Assembling input '%' to '%'\n", temp_our_asm_path, temp_our_encoded_path);
     if !assemble(temp_our_asm_path, temp_our_encoded_path) {
         print("Error assembling '%'\n", temp_our_asm_path);
         return false;
@@ -109,7 +109,8 @@ test_files :: Test_File.[
 ];
 
 run_tests :: () {
-    DEBUG = false;
+    DEBUG_DECODE = false;
+    DEBUG_EXEC   = false;
     print("RUNNING TESTS:\n");
 
     total_fail_count := 0;
