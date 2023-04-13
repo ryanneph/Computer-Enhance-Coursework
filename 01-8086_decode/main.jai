@@ -1397,7 +1397,7 @@ load_register :: (state: *Processor_State, register: Register) -> u16 {
     reg := register_def(register);
     value: u16 =  state.register_memory[reg.offset];
     if reg.size >= 2
-        value |= (state.register_memory[reg.offset + 1]) << 8;
+        value |= (cast(u16)state.register_memory[reg.offset + 1]) << 8;
     return value;
 }
 

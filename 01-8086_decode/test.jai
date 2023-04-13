@@ -97,6 +97,23 @@ validate_register_movs :: (state: *Processor_State) -> bool {
     return success;
 }
 
+validate_challenge_register_movs :: (state: *Processor_State) -> bool {
+    success := true;
+    success &= load_register(state, .AX) == 0x4411;
+    success &= load_register(state, .BX) == 0x3344;
+    success &= load_register(state, .CX) == 0x6677;
+    success &= load_register(state, .DX) == 0x7788;
+    success &= load_register(state, .SP) == 0x4411;
+    success &= load_register(state, .BP) == 0x3344;
+    success &= load_register(state, .SI) == 0x6677;
+    success &= load_register(state, .DI) == 0x7788;
+    success &= load_register(state, .ES) == 0x6677;
+    success &= load_register(state, .SS) == 0x4411;
+    success &= load_register(state, .DS) == 0x3344;
+
+    return success;
+}
+
 run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
     encoded_filename := path_join(TEST_TEMP_DIR, path_basename(asm_filename));
     assemble(asm_filename, encoded_filename);
@@ -177,14 +194,15 @@ init_tests :: () -> []Test {
     decode_subtest :: Subtest.{ type = .DECODE };
 
     tests: [..]Test;
-    add_test("listing_0037_single_register_mov.asm",  decode_subtest);
-    add_test("listing_0038_many_register_mov.asm",    decode_subtest);
-    add_test("listing_0039_more_movs.asm",            decode_subtest);
-    add_test("listing_0040_challenge_movs.asm",       decode_subtest);
-    add_test("listing_0041_add_sub_cmp_jnz.asm",      decode_subtest);
-    add_test("listing_0042_completionist_decode.asm", decode_subtest);
-    add_test("listing_0043_immediate_movs.asm",       decode_subtest, make_exec_subtest(validate_immediate_movs));
-    add_test("listing_0044_register_movs.asm",        decode_subtest, make_exec_subtest(validate_register_movs));
+    add_test("listing_0037_single_register_mov.asm",     decode_subtest);
+    add_test("listing_0038_many_register_mov.asm",       decode_subtest);
+    add_test("listing_0039_more_movs.asm",               decode_subtest);
+    add_test("listing_0040_challenge_movs.asm",          decode_subtest);
+    add_test("listing_0041_add_sub_cmp_jnz.asm",         decode_subtest);
+    add_test("listing_0042_completionist_decode.asm",    decode_subtest);
+    add_test("listing_0043_immediate_movs.asm",          decode_subtest, make_exec_subtest(validate_immediate_movs));
+    add_test("listing_0044_register_movs.asm",           decode_subtest, make_exec_subtest(validate_register_movs));
+    add_test("listing_0045_challenge_register_movs.asm", decode_subtest, make_exec_subtest(validate_challenge_register_movs));
 
     return tests;
 }
@@ -216,6 +234,6 @@ run_tests :: () {
     if total_fail_count
         print("TEST RESULTS: % tests FAILED!\n", total_fail_count);
     else
-        print("TEST_RESULTS: all tests PASSED!\n");
+        print("TEST RESULTS: all tests PASSED!\n");
 }
 
