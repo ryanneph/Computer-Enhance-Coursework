@@ -1380,32 +1380,36 @@ print_processor_state :: (state: Processor_State) {
     print_register_word(.DI);
 }
 
+store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
+    if operand.type == {
+        case .REGISTER;
+            reg := register_def(operand.reg);
+            state.register_memory[reg.offset] = cast(u8)(value & 0xFF);
+            if reg.size >= 2
+                state.register_memory[reg.offset + 1] = cast(u8)((value >> 8) & 0xFF);
+    }
+
+}
+
+load_register :: (state: *Processor_State, register: Register) -> u16 {
+    reg := register_def(register);
+    value: u16 =  state.register_memory[reg.offset];
+    if reg.size >= 2
+        value |= (state.register_memory[reg.offset + 1]) << 8;
+    return value;
+}
+
+load_operand :: (state: *Processor_State, operand: Operand) -> u16 {
+    if operand.type == {
+        case .IMMEDIATE;
+            return operand.imm.val;
+        case .REGISTER;
+            return load_register(state, operand.reg);
+    }
+    return 1 << 16 - 1;
+}
+
 exec_mov :: (state: *Processor_State, inst: Instruction) {
-    store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
-        if operand.type == {
-            case .REGISTER;
-                reg := register_def(operand.reg);
-                state.register_memory[reg.offset] = cast(u8)(value & 0xFF);
-                if reg.size >= 2
-                    state.register_memory[reg.offset + 1] = cast(u8)((value >> 8) & 0xFF);
-        }
-
-    }
-
-    load_operand :: (state: *Processor_State, operand: Operand) -> u16 {
-        if operand.type == {
-            case .IMMEDIATE;
-                return operand.imm.val;
-            case .REGISTER;
-                reg := register_def(operand.reg);
-                value: u16 =  state.register_memory[reg.offset];
-                if reg.size >= 2
-                    value |= (state.register_memory[reg.offset + 1]) << 8;
-                return value;
-        }
-        return 1 << 16 - 1;
-    }
-
     original: u16;
     if DEBUG_EXEC
         original = load_operand(state, inst.dst);

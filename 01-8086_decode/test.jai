@@ -1,3 +1,5 @@
+#scope_file
+
 #import "File";
 #import "File_Utilities";
 #import "String";
@@ -19,10 +21,8 @@ assemble :: (asm_path: string, output_path: string) -> bool {
     return true;
 }
 
-run_one_decode_test :: (test_file: Test_File) -> bool {
-    actual_asm_path := test_file.filename;
-
-    temp_dirname := "test_tmp";
+run_one_decode_test :: (actual_asm_path: string) -> bool {
+    temp_dirname := TEST_TEMP_DIR;
     asm_filename := path_filename(actual_asm_path);
 
     temp_asm_path := path_join(temp_dirname, asm_filename);
@@ -69,57 +69,141 @@ run_one_decode_test :: (test_file: Test_File) -> bool {
     return true;
 }
 
-run_one_exec_test :: (test_file: Test_File) -> bool {
-    return false;
+validate_immediate_movs :: (state: *Processor_State) -> bool {
+    success := true;
+    success &= load_register(state, .AX) == 1;
+    success &= load_register(state, .BX) == 2;
+    success &= load_register(state, .CX) == 3;
+    success &= load_register(state, .DX) == 4;
+    success &= load_register(state, .SP) == 5;
+    success &= load_register(state, .BP) == 6;
+    success &= load_register(state, .SI) == 7;
+    success &= load_register(state, .DI) == 8;
+
+    return success;
 }
 
-run_one_test :: (test_file: Test_File) -> (fail_count: s64) {
+validate_register_movs :: (state: *Processor_State) -> bool {
+    success := true;
+    success &= load_register(state, .AX) == 4;
+    success &= load_register(state, .BX) == 3;
+    success &= load_register(state, .CX) == 2;
+    success &= load_register(state, .DX) == 1;
+    success &= load_register(state, .SP) == 1;
+    success &= load_register(state, .BP) == 2;
+    success &= load_register(state, .SI) == 3;
+    success &= load_register(state, .DI) == 4;
+
+    return success;
+}
+
+run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
+    encoded_filename := path_join(TEST_TEMP_DIR, path_basename(asm_filename));
+    assemble(asm_filename, encoded_filename);
+
+    bytes: []u8 = file_read_all_as_bytes(encoded_filename);
+
+    state: Processor_State;
+    offset := 0;
+    while offset < bytes.count {
+        head := bytes.data + offset;
+        inst, advance := decode_once(head);
+        offset += advance;
+
+        exec_instruction(*state, inst);
+    }
+
+    return payload.validate_proc(*state);
+}
+
+run_one_test :: (test: Test) -> (fail_count: s64) {
     fail_count := 0;
 
-    run_test :: (name: string, enabled: bool, proc: #type (Test_File) -> bool) #expand {
-        if !enabled
-            return;
-        success := proc(test_file);
+    for subtest: test.subtests {
+        success: bool;
+        if #complete subtest.type == {
+            case .DECODE;
+                success = run_one_decode_test(test.filename);
+            case .EXECUTE;
+                success = run_one_exec_test(test.filename, subtest.execute);
+        }
+
         if !success {
-            print("  -- % test failed\n", name);
+            print("  -- % test failed\n", subtest.type);
             fail_count += 1;
         }
     }
 
-    run_test("decode", test_file.decode, run_one_decode_test);
-    run_test("exec",   test_file.exec,   run_one_exec_test);
-
     return fail_count;
 }
 
-TEST_PATH_PREFIX :: "../cmuratori-computer_enhance/perfaware/part1/";
-Test_File :: struct {
+Test :: struct {
     filename: string;
-    decode:   bool;
-    exec:     bool;
+    subtests: [..]Subtest;
 }
-test_files :: Test_File.[
-    .{ "listing_0037_single_register_mov.asm",  true,  false, },
-    .{ "listing_0038_many_register_mov.asm",    true,  false, },
-    .{ "listing_0039_more_movs.asm",            true,  false, },
-    .{ "listing_0040_challenge_movs.asm",       true,  false, },
-    .{ "listing_0041_add_sub_cmp_jnz.asm",      true,  false, },
-    .{ "listing_0042_completionist_decode.asm", true,  false, },
-    .{ "listing_0043_immediate_movs.asm",       true,  true, },
-];
+Subtest_Type :: enum {
+    DECODE;
+    EXECUTE;
+}
+Validate_Processor_State_Proc :: #type (*Processor_State) -> bool;
+Execute_Payload :: struct {
+    validate_proc: Validate_Processor_State_Proc;
+}
+Subtest :: struct {
+    type: Subtest_Type;
+    using payload: union {
+        execute: Execute_Payload;
+    };
+}
+
+TEST_TEMP_DIR :: "test_temp";
+TEST_PATH_PREFIX :: "../cmuratori-computer_enhance/perfaware/part1";
+init_tests :: () -> []Test {
+    add_test :: (basename: string, subtests: .. Subtest) #expand {
+        test: Test;
+        test.filename = sprint("%/%", TEST_PATH_PREFIX, basename);
+
+        for subtests
+            array_add(*test.subtests, it);
+
+        array_add(*tests, test);
+    }
+    make_exec_subtest :: (proc: Validate_Processor_State_Proc) -> Subtest {
+        subtest: Subtest;
+        subtest.type = .EXECUTE;
+        subtest.execute.validate_proc = proc;
+        return subtest;
+    }
+    decode_subtest :: Subtest.{ type = .DECODE };
+
+    tests: [..]Test;
+    add_test("listing_0037_single_register_mov.asm",  decode_subtest);
+    add_test("listing_0038_many_register_mov.asm",    decode_subtest);
+    add_test("listing_0039_more_movs.asm",            decode_subtest);
+    add_test("listing_0040_challenge_movs.asm",       decode_subtest);
+    add_test("listing_0041_add_sub_cmp_jnz.asm",      decode_subtest);
+    add_test("listing_0042_completionist_decode.asm", decode_subtest);
+    add_test("listing_0043_immediate_movs.asm",       decode_subtest, make_exec_subtest(validate_immediate_movs));
+    add_test("listing_0044_register_movs.asm",        decode_subtest, make_exec_subtest(validate_register_movs));
+
+    return tests;
+}
+
+
+#scope_export
 
 run_tests :: () {
     DEBUG_DECODE = false;
     DEBUG_EXEC   = false;
+
+    tests := init_tests();
+
     print("RUNNING TESTS:\n");
 
     total_fail_count := 0;
-    for test_files {
-        test_file := it;
-        test_file.filename = tprint("%/%", TEST_PATH_PREFIX, it.filename);
-
-        print("Testing '%'\n", test_file.filename);
-        fail_count := run_one_test(test_file);
+    for test: tests {
+        print("Testing '%'\n", test.filename);
+        fail_count := run_one_test(test);
         if fail_count {
             print("  % tests FAILED!\n", fail_count);
             total_fail_count += fail_count;
