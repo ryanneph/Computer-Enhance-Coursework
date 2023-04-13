@@ -453,6 +453,7 @@ Opcode_Table :: struct {
     #insert #run assign_op_info_range(0x38, 0x3B, ".{ decode_reg_with_rm,          .CMP,         }");
     #insert #run assign_op_info_range(0x86, 0x87, ".{ decode_reg_with_rm,          .XCHG,        }");
     #insert #run assign_op_info_range(0x88, 0x8C, ".{ decode_reg_with_rm,          .MOV,         }");
+    #insert #run assign_op_info_range(0x8E, 0x8E, ".{ decode_reg_with_rm,          .MOV,         }");
     #insert #run assign_op_info_range(0xC2, 0xC2, ".{ decode_ret_pop_sp,           .RET,         }");
     #insert #run assign_op_info_range(0xCA, 0xCA, ".{ decode_ret_pop_sp,           .RET,         }");
     #insert #run assign_op_info_range(0xA4, 0xA7, ".{ decode_string_manipulation,  .INVALID,     }");
@@ -1077,9 +1078,10 @@ decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     // Special case for move to/from segment register
     reg: Operand;
-    if <<head == 0x8C && !(<<(head + 1) & 0b0010_0000)
+    if <<head == 0x8C || <<head == 0x8E {
         reg = operand_segment((<<(head + 1) & 0b0001_1000) >> 3);
-    else
+        field_w = 1; // segment registers always use 16-bit moves
+    } else
         reg = operand_register(field_reg, field_w);
 
     rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
