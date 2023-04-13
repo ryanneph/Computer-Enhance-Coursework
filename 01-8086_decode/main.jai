@@ -518,6 +518,9 @@ operand_memory_direct :: inline (addr: u16) -> Operand {
 immediate :: inline (low: u8, high: u8 = 0) -> u16 {
     return ((cast(u16)high) << 8) | cast(u16)low;
 }
+operand_immediate_u16 :: inline (value: u16, size: Operand_Size = .IMPLICIT) -> Operand {
+    return Operand.{ type = .IMMEDIATE, size = size, imm = Immediate.{ val = value }};
+}
 operand_immediate :: inline (low: u8, high: u8 = 0, size: Operand_Size = .IMPLICIT) -> Operand {
     return Operand.{ type = .IMMEDIATE, size = size, imm = Immediate.{ val = immediate(low, high) }};
 }
@@ -549,7 +552,7 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             return builder_to_string(*builder);
         case .IMMEDIATE;
             explicit_size := "";
-            if operand.size      == .BYTE  explicit_size = "byte ";
+            if      operand.size == .BYTE  explicit_size = "byte ";
             else if operand.size == .WORD  explicit_size = "word ";
 
             if inst.flags & .FAR_SEGMENT
@@ -595,13 +598,22 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
     }
 };
 
+sign_extend :: (value: u8) -> u16 {
+    extended := cast(s16) (cast,no_check(s8) value);
+    return cast,no_check(u16) extended;
+}
+
 _decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8, implicit_size: bool = false) -> (Operand, bytes_read: s32) {
     advance_count: s32;
     imm: Operand;
 
     if (!field_w || field_s) {
         field_low := <<(head_imm);
-        imm = operand_immediate(field_low, 0, ifx field_s then Operand_Size.WORD else .BYTE);
+        if !field_s
+            imm = operand_immediate(field_low, 0, .BYTE);
+        else {
+            imm = operand_immediate_u16(sign_extend(field_low), .WORD);
+        }
         advance_count = 1;
     } else {
         field_low  := <<(head_imm);
