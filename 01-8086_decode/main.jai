@@ -9,6 +9,17 @@ DEBUG_EXEC   := true;
 DEBUG_TEST   := false;
 formatHex :: #bake_arguments formatInt(base=16);
 
+Flag :: enum_flags {
+    CARRY;
+    PARITY;
+    AUX_CARRY;
+    ZERO;
+    SIGN;
+    OVERFLOW;
+    INT_ENABLE;
+    DIRECTION;
+    TRAP;
+}
 Register :: enum {
     INVALID :: 0;
 
@@ -16,7 +27,9 @@ Register :: enum {
     AL :: FIRST_REGISTER; AX; CL; CX; DL; DX; BL; BX; AH; SP; CH; BP; DH; SI; BH; DI;
 
     FIRST_SEGMENT;
-    ES :: FIRST_SEGMENT; CS; SS; DS; // segment registers
+    ES :: FIRST_SEGMENT; CS; SS; DS; // 16-bit segment registers
+
+    FLAG; // 16-bit flag register (LSB 9-bits used)
 }
 Register_Definition :: struct {
     name: string;
@@ -25,29 +38,31 @@ Register_Definition :: struct {
 }
 Registers :: struct {
     // addressed by field_reg(3-bit) | field_w(1-bit)
-    defs: [20]Register_Definition;
+    defs: [21]Register_Definition;
 
-    defs[Register.AL - Register.FIRST_REGISTER] = .{"al",  0, 1};
-    defs[Register.AX - Register.FIRST_REGISTER] = .{"ax",  0, 2};
-    defs[Register.CL - Register.FIRST_REGISTER] = .{"cl",  4, 1};
-    defs[Register.CX - Register.FIRST_REGISTER] = .{"cx",  4, 2};
-    defs[Register.DL - Register.FIRST_REGISTER] = .{"dl",  6, 1};
-    defs[Register.DX - Register.FIRST_REGISTER] = .{"dx",  6, 2};
-    defs[Register.BL - Register.FIRST_REGISTER] = .{"bl",  2, 1};
-    defs[Register.BX - Register.FIRST_REGISTER] = .{"bx",  2, 2};
-    defs[Register.AH - Register.FIRST_REGISTER] = .{"ah",  1, 1};
-    defs[Register.SP - Register.FIRST_REGISTER] = .{"sp",  8, 2};
-    defs[Register.CH - Register.FIRST_REGISTER] = .{"ch",  5, 1};
-    defs[Register.BP - Register.FIRST_REGISTER] = .{"bp", 10, 2};
-    defs[Register.DH - Register.FIRST_REGISTER] = .{"dh",  7, 1};
-    defs[Register.SI - Register.FIRST_REGISTER] = .{"si", 12, 2};
-    defs[Register.BH - Register.FIRST_REGISTER] = .{"bh",  3, 1};
-    defs[Register.DI - Register.FIRST_REGISTER] = .{"di", 14, 2};
+    defs[Register.AL   - Register.FIRST_REGISTER] = .{"al",     0, 1};
+    defs[Register.AX   - Register.FIRST_REGISTER] = .{"ax",     0, 2};
+    defs[Register.CL   - Register.FIRST_REGISTER] = .{"cl",     4, 1};
+    defs[Register.CX   - Register.FIRST_REGISTER] = .{"cx",     4, 2};
+    defs[Register.DL   - Register.FIRST_REGISTER] = .{"dl",     6, 1};
+    defs[Register.DX   - Register.FIRST_REGISTER] = .{"dx",     6, 2};
+    defs[Register.BL   - Register.FIRST_REGISTER] = .{"bl",     2, 1};
+    defs[Register.BX   - Register.FIRST_REGISTER] = .{"bx",     2, 2};
+    defs[Register.AH   - Register.FIRST_REGISTER] = .{"ah",     1, 1};
+    defs[Register.SP   - Register.FIRST_REGISTER] = .{"sp",     8, 2};
+    defs[Register.CH   - Register.FIRST_REGISTER] = .{"ch",     5, 1};
+    defs[Register.BP   - Register.FIRST_REGISTER] = .{"bp",    10, 2};
+    defs[Register.DH   - Register.FIRST_REGISTER] = .{"dh",     7, 1};
+    defs[Register.SI   - Register.FIRST_REGISTER] = .{"si",    12, 2};
+    defs[Register.BH   - Register.FIRST_REGISTER] = .{"bh",     3, 1};
+    defs[Register.DI   - Register.FIRST_REGISTER] = .{"di",    14, 2};
 
-    defs[Register.ES - Register.FIRST_REGISTER] = .{"es", 16, 2};
-    defs[Register.CS - Register.FIRST_REGISTER] = .{"cs", 18, 2};
-    defs[Register.SS - Register.FIRST_REGISTER] = .{"ss", 20, 2};
-    defs[Register.DS - Register.FIRST_REGISTER] = .{"ds", 22, 2};
+    defs[Register.ES   - Register.FIRST_REGISTER] = .{"es",    16, 2};
+    defs[Register.CS   - Register.FIRST_REGISTER] = .{"cs",    18, 2};
+    defs[Register.SS   - Register.FIRST_REGISTER] = .{"ss",    20, 2};
+    defs[Register.DS   - Register.FIRST_REGISTER] = .{"ds",    22, 2};
+
+    defs[Register.FLAG - Register.FIRST_REGISTER] = .{"flags", 24, 2};
 }
 registers: Registers;
 
@@ -1351,20 +1366,34 @@ disassemble_file :: (filename: string, output_asm_path: string="out.asm") {
 }
 
 Processor_State :: struct {
-    register_memory: [24]u8;
+    register_memory: [26]u8;
     memory: [1024 * 1024]u8;
     flags: u8;
 }
+flags_to_string :: (state: Processor_State, allocator: Allocator = temporary_allocator) -> string {
+    builder: String_Builder;
+    builder.allocator = temporary_allocator;
+
+    flags := cast(Flag) load_register(state, .FLAG);
+    if flags & .TRAP        append(*builder, "T");
+    if flags & .DIRECTION   append(*builder, "D");
+    if flags & .INT_ENABLE  append(*builder, "I");
+    if flags & .OVERFLOW    append(*builder, "O");
+    if flags & .SIGN        append(*builder, "S");
+    if flags & .ZERO        append(*builder, "Z");
+    if flags & .AUX_CARRY   append(*builder, "A");
+    if flags & .PARITY      append(*builder, "P");
+    if flags & .CARRY       append(*builder, "C");
+
+    return builder_to_string(*builder, allocator);
+}
 print_processor_state :: (state: Processor_State) {
     print_register_word :: (reg: Register, low: Register = .INVALID, high: Register = .INVALID) #expand {
-        def := register_def(reg);
-        assert(def.size == 2);
+        value: u16 = load_register(*state, reg);
+        low_value  : u8 = cast,no_check(u8) value;
+        high_value : u8 = cast(u8) (value >> 8);
 
-        value: u16 = state.register_memory[def.offset];
-        low_value: u8 = cast,no_check(u8) value;
-        high_value : u8 = xx (value >> 8);
-
-        print("    %: 0x% (%) [low=%, high=%]\n", def.name, formatHex(value, minimum_digits=4),
+        print("    %: 0x% (%) [low=%, high=%]\n", register_def(reg).name, formatHex(value, minimum_digits=4),
             formatInt(value, minimum_digits=5, padding=#char " "),
             formatInt(low_value, minimum_digits=3, padding=#char " "),
             formatInt(high_value, minimum_digits=3, padding=#char " "));
@@ -1380,20 +1409,25 @@ print_processor_state :: (state: Processor_State) {
     print_register_word(.BP);
     print_register_word(.SI);
     print_register_word(.DI);
+
+    print("    flags: %\n", flags_to_string(state));
+}
+
+store_register :: (state: *Processor_State, register: Register, value: u16) {
+    reg := register_def(register);
+    state.register_memory[reg.offset] = cast(u8)(value & 0xFF);
+    if reg.size >= 2
+        state.register_memory[reg.offset + 1] = cast(u8)((value >> 8) & 0xFF);
 }
 
 store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
     if operand.type == {
         case .REGISTER;
-            reg := register_def(operand.reg);
-            state.register_memory[reg.offset] = cast(u8)(value & 0xFF);
-            if reg.size >= 2
-                state.register_memory[reg.offset + 1] = cast(u8)((value >> 8) & 0xFF);
+            store_register(state, operand.reg, value);
     }
-
 }
 
-load_register :: (state: *Processor_State, register: Register) -> u16 {
+load_register :: (state: Processor_State, register: Register) -> u16 {
     reg := register_def(register);
     value: u16 =  state.register_memory[reg.offset];
     if reg.size >= 2
@@ -1401,7 +1435,7 @@ load_register :: (state: *Processor_State, register: Register) -> u16 {
     return value;
 }
 
-load_operand :: (state: *Processor_State, operand: Operand) -> u16 {
+load_operand :: (state: Processor_State, operand: Operand) -> u16 {
     if operand.type == {
         case .IMMEDIATE;
             return operand.imm.val;
@@ -1409,6 +1443,28 @@ load_operand :: (state: *Processor_State, operand: Operand) -> u16 {
             return load_register(state, operand.reg);
     }
     return 1 << 16 - 1;
+}
+
+set_flag :: (flags: *u16, flag: Flag, value: bool) {
+    if value  { (<<flags) |=   cast(u16) flag;  }
+    else      { (<<flags) &= ~(cast(u16) flag); }
+}
+
+set_arithmetic_flags :: (state: *Processor_State, value: u16) {
+    // load, overwrite some flags, and store
+    flags: u16 = load_register(state, .FLAG);
+    set_flag(*flags, Flag.SIGN, cast(bool) value & 0x8000);
+    set_flag(*flags, Flag.ZERO, value == 0);
+
+    set_count := 0;
+    temp := value;
+    for 0..15 {
+        set_count += xx (temp & 0x1);
+        temp >> 1;
+    }
+    set_flag(*flags, Flag.PARITY, set_count % 2 == 0);
+
+    store_register(state, .FLAG, flags);
 }
 
 exec_mov :: (state: *Processor_State, inst: Instruction) {
@@ -1423,11 +1479,45 @@ exec_mov :: (state: *Processor_State, inst: Instruction) {
         print("% ; %:0x%->0x%\n", instruction_to_string(inst), operand_to_string(inst, inst.dst),
             formatHex(original), formatHex(value));
 }
+exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
+    original_flags: string;
+    if DEBUG_EXEC
+        original_flags = flags_to_string(state);
+
+    dst := load_operand(state, inst.dst);
+    src := load_operand(state, inst.src);
+
+    value: u16;
+    if inst.type == {
+        case .ADD;
+            value = dst + src;
+
+        case .SUB; #through;
+        case .CMP;
+            value = dst - src;
+    }
+
+    if inst.type != .CMP
+        store_operand(state, inst.dst, value);
+    set_arithmetic_flags(state, value);
+
+    if DEBUG_EXEC
+        print("% ; %:0x%->0x% flags:%->%\n", instruction_to_string(inst), operand_to_string(inst, inst.dst),
+            formatHex(dst), formatHex(value), original_flags, flags_to_string(state));
+}
 exec_instruction :: (state: *Processor_State, inst: Instruction) {
-    if (inst.type == .MOV) {
-        exec_mov(state, inst);
-    } else
-        assert(false, "EXEC for instruction type '%' is not implemented.\n", inst.type);
+    if inst.type == {
+        case .MOV; exec_mov(state, inst);
+
+        case .ADD; #through;
+        // case .ADC; #through;
+        case .CMP; #through;
+        case .SUB;
+        // case .SBB; #through;
+            exec_arithmetic(state, inst);
+        case;
+            assert(false, "EXEC for instruction type '%' is not implemented.\n", inst.type);
+    }
 }
 
 execute_file :: (filename: string) {

@@ -69,6 +69,10 @@ run_one_decode_test :: (actual_asm_path: string) -> bool {
     return true;
 }
 
+flags_equal :: inline (state: *Processor_State, flags: Flag) -> bool {
+    return (load_register(state, .FLAG) & cast(u16) flags) == cast(u16) flags;
+}
+
 validate_immediate_movs :: (state: *Processor_State) -> bool {
     success := true;
     success &= load_register(state, .AX) == 1;
@@ -110,6 +114,17 @@ validate_challenge_register_movs :: (state: *Processor_State) -> bool {
     success &= load_register(state, .ES) == 0x6677;
     success &= load_register(state, .SS) == 0x4411;
     success &= load_register(state, .DS) == 0x3344;
+
+    return success;
+}
+
+validate_add_sub_cmp :: (state: *Processor_State) -> bool {
+    success := true;
+    success &= load_register(state, .BX) == 0xE102;
+    success &= load_register(state, .CX) == 0x0F01;
+    success &= load_register(state, .SP) == 0x03E6;
+    success &= load_register(state, .BP) == 0x0000;
+    success &= flags_equal(state, Flag.PARITY | .ZERO);
 
     return success;
 }
@@ -203,6 +218,7 @@ init_tests :: () -> []Test {
     add_test("listing_0043_immediate_movs.asm",          decode_subtest, make_exec_subtest(validate_immediate_movs));
     add_test("listing_0044_register_movs.asm",           decode_subtest, make_exec_subtest(validate_register_movs));
     add_test("listing_0045_challenge_register_movs.asm", decode_subtest, make_exec_subtest(validate_challenge_register_movs));
+    add_test("listing_0046_add_sub_cmp.asm",             decode_subtest, make_exec_subtest(validate_add_sub_cmp));
 
     return tests;
 }
