@@ -129,6 +129,17 @@ validate_add_sub_cmp :: (state: *Processor_State) -> bool {
     return success;
 }
 
+validate_challenge_flags :: (state: *Processor_State) -> bool {
+    success := true;
+    success &= load_register(state, .BX) == 0x9CA5;
+    success &= load_register(state, .DX) == 0x000A;
+    success &= load_register(state, .SP) == 0x0063;
+    success &= load_register(state, .BP) == 0x0062;
+    success &= flags_equal(state, Flag.CARRY | .PARITY | .AUX_CARRY | .SIGN);
+
+    return success;
+}
+
 run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
     encoded_filename := path_join(TEST_TEMP_DIR, path_basename(asm_filename));
     assemble(asm_filename, encoded_filename);
@@ -219,6 +230,7 @@ init_tests :: () -> []Test {
     add_test("listing_0044_register_movs.asm",           decode_subtest, make_exec_subtest(validate_register_movs));
     add_test("listing_0045_challenge_register_movs.asm", decode_subtest, make_exec_subtest(validate_challenge_register_movs));
     add_test("listing_0046_add_sub_cmp.asm",             decode_subtest, make_exec_subtest(validate_add_sub_cmp));
+    add_test("listing_0047_challenge_flags.asm",         decode_subtest, make_exec_subtest(validate_challenge_flags));
 
     return tests;
 }

@@ -924,7 +924,7 @@ decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
             instruction_to_string(inst), formatHex(<<head), inst.dst.inc.val, inst.desc);
     }
 
-    return 2;
+    return cast(s32) inst.size;
 }
 
 decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
@@ -1312,6 +1312,7 @@ decode_once :: (head: *u8) -> (Instruction, advance: s32) {
     inst.flags = flags;
     inst.segment_override = segment_override; // ignored unless (flags & .SEGMENT_OVERRIDE)
     advance_count := op_info.decode(*inst, head);
+    inst.size = cast(u32) advance_count;
 
     assert(inst.type != .INVALID, "Instruction dispatch handler must resolve instruction if not resolvable automatically from the first byte");
     assert(inst.desc.count > 0, "Instruction dispatch handler must provide a description");
@@ -1462,23 +1463,6 @@ set_flag :: (flags: *u16, flag: Flag, value: bool) {
     else      { (<<flags) &= ~(cast(u16) flag); }
 }
 
-set_arithmetic_flags :: (state: *Processor_State, value: u16) {
-    // load, overwrite some flags, and store
-    flags: u16 = load_register(state, .FLAG);
-    set_flag(*flags, Flag.SIGN, cast(bool) value & 0x8000);
-    set_flag(*flags, Flag.ZERO, value == 0);
-
-    set_count := 0;
-    temp := value;
-    for 0..15 {
-        set_count += xx (temp & 0x1);
-        temp >> 1;
-    }
-    set_flag(*flags, Flag.PARITY, set_count % 2 == 0);
-
-    store_register(state, .FLAG, flags);
-}
-
 exec_mov :: (state: *Processor_State, inst: Instruction) {
     original: u16;
     if DEBUG_EXEC
@@ -1496,22 +1480,49 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
     if DEBUG_EXEC
         original_flags = flags_to_string(state);
 
-    dst := load_operand(state, inst.dst);
-    src := load_operand(state, inst.src);
+    dst: u32 = cast(u32) load_operand(state, inst.dst);
+    src: u32 = cast(u32) load_operand(state, inst.src);
 
-    value: u16;
+    // TODO(ryan): only supports 16-bit ops
+
+    if inst.type == .SUB || inst.type == .CMP
+        src = ((~src) + 1) & 0xFFFF;
+
+    value32: u32; // for detecting CARRY
+    aux_carry: bool;
+    carry: bool;
     if inst.type == {
         case .ADD;
-            value = dst + src;
+            value32 = dst + src;
+            carry     = cast(bool)  (value32 & 0x1_0000);
+            aux_carry = cast(bool) ((value32 ^ dst ^ src) & 0x10);
 
         case .SUB; #through;
         case .CMP;
-            value = dst - src;
+            value32 = dst + src; // with two's-complement src
+            carry     = ! cast(bool)  (value32 & 0x1_0000);
+            aux_carry = ! cast(bool) ((value32 ^ dst ^ src) & 0x10);
     }
 
+    value: u16 = cast,no_check(u16) value32;
     if inst.type != .CMP
         store_operand(state, inst.dst, value);
-    set_arithmetic_flags(state, value);
+
+    // load, overwrite some flags, and store
+    flags: u16 = load_register(state, .FLAG);
+    {
+        set_flag(*flags, Flag.SIGN,      cast(bool) value & 0x8000);
+        set_flag(*flags, Flag.ZERO,      value == 0);
+        set_flag(*flags, Flag.CARRY,     carry);
+        set_flag(*flags, Flag.AUX_CARRY, aux_carry);
+        set_flag(*flags, Flag.OVERFLOW,  cast(bool) (~(src ^ dst) & 0x8000) & ((value ^ dst) & 0x8000));
+
+        // parity (low-order 8-bits have even number of set bits)
+        set_count := 0;
+        for 0..7  set_count += cast(s64) cast(bool) (value & (1 << it));
+        set_flag(*flags, Flag.PARITY, set_count % 2 == 0);
+    }
+    store_register(state, .FLAG, flags);
 
     if DEBUG_EXEC
         print("% ; %:0x%->0x% flags:%->%\n", instruction_to_string(inst), operand_to_string(inst, inst.dst),
