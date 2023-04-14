@@ -74,70 +74,74 @@ flags_equal :: inline (state: *Processor_State, flags: Flag) -> bool {
 }
 
 validate_immediate_movs :: (state: *Processor_State) -> bool {
-    success := true;
-    success &= load_register(state, .AX) == 1;
-    success &= load_register(state, .BX) == 2;
-    success &= load_register(state, .CX) == 3;
-    success &= load_register(state, .DX) == 4;
-    success &= load_register(state, .SP) == 5;
-    success &= load_register(state, .BP) == 6;
-    success &= load_register(state, .SI) == 7;
-    success &= load_register(state, .DI) == 8;
+    expected: Processor_State;
+    store_register(*expected, .AX, 1);
+    store_register(*expected, .BX, 2);
+    store_register(*expected, .CX, 3);
+    store_register(*expected, .DX, 4);
+    store_register(*expected, .SP, 5);
+    store_register(*expected, .BP, 6);
+    store_register(*expected, .SI, 7);
+    store_register(*expected, .DI, 8);
 
-    return success;
+    return !memcmp(*expected, state, size_of(Processor_State));
 }
 
 validate_register_movs :: (state: *Processor_State) -> bool {
-    success := true;
-    success &= load_register(state, .AX) == 4;
-    success &= load_register(state, .BX) == 3;
-    success &= load_register(state, .CX) == 2;
-    success &= load_register(state, .DX) == 1;
-    success &= load_register(state, .SP) == 1;
-    success &= load_register(state, .BP) == 2;
-    success &= load_register(state, .SI) == 3;
-    success &= load_register(state, .DI) == 4;
+    expected: Processor_State;
+    store_register(*expected, .AX, 4);
+    store_register(*expected, .BX, 3);
+    store_register(*expected, .CX, 2);
+    store_register(*expected, .DX, 1);
+    store_register(*expected, .SP, 1);
+    store_register(*expected, .BP, 2);
+    store_register(*expected, .SI, 3);
+    store_register(*expected, .DI, 4);
 
-    return success;
+    return !memcmp(*expected, state, size_of(Processor_State));
 }
 
 validate_challenge_register_movs :: (state: *Processor_State) -> bool {
-    success := true;
-    success &= load_register(state, .AX) == 0x4411;
-    success &= load_register(state, .BX) == 0x3344;
-    success &= load_register(state, .CX) == 0x6677;
-    success &= load_register(state, .DX) == 0x7788;
-    success &= load_register(state, .SP) == 0x4411;
-    success &= load_register(state, .BP) == 0x3344;
-    success &= load_register(state, .SI) == 0x6677;
-    success &= load_register(state, .DI) == 0x7788;
-    success &= load_register(state, .ES) == 0x6677;
-    success &= load_register(state, .SS) == 0x4411;
-    success &= load_register(state, .DS) == 0x3344;
+    expected: Processor_State;
+    store_register(*expected, .AX, 0x4411);
+    store_register(*expected, .BX, 0x3344);
+    store_register(*expected, .CX, 0x6677);
+    store_register(*expected, .DX, 0x7788);
+    store_register(*expected, .SP, 0x4411);
+    store_register(*expected, .BP, 0x3344);
+    store_register(*expected, .SI, 0x6677);
+    store_register(*expected, .DI, 0x7788);
+    store_register(*expected, .ES, 0x6677);
+    store_register(*expected, .SS, 0x4411);
+    store_register(*expected, .DS, 0x3344);
 
-    return success;
+    return !memcmp(*expected, state, size_of(Processor_State));
 }
 
 validate_add_sub_cmp :: (state: *Processor_State) -> bool {
-    success := true;
-    success &= load_register(state, .BX) == 0xE102;
-    success &= load_register(state, .CX) == 0x0F01;
-    success &= load_register(state, .SP) == 0x03E6;
-    success &= load_register(state, .BP) == 0x0000;
-    success &= flags_equal(state, Flag.PARITY | .ZERO);
+    expected: Processor_State;
+    store_register(*expected, .BX, 0xE102);
+    store_register(*expected, .CX, 0x0F01);
+    store_register(*expected, .SP, 0x03E6);
+    store_register(*expected, .BP, 0x0000);
 
-    return success;
+    flags := Flag.PARITY | .ZERO;
+    store_register(*expected, .FLAG, cast(u16) flags);
+
+    return !memcmp(*expected, state, size_of(Processor_State));
 }
 
 validate_challenge_flags :: (state: *Processor_State) -> bool {
-    success := true;
-    success &= load_register(state, .BX) == 0x9CA5;
-    success &= load_register(state, .DX) == 0x000A;
-    success &= load_register(state, .SP) == 0x0063;
-    success &= load_register(state, .BP) == 0x0062;
-    success &= flags_equal(state, Flag.CARRY | .PARITY | .AUX_CARRY | .SIGN);
+    expected: Processor_State;
+    store_register(*expected, .BX, 0x9CA5);
+    store_register(*expected, .DX, 0x000A);
+    store_register(*expected, .SP, 0x0063);
+    store_register(*expected, .BP, 0x0062);
 
-    return success;
+    flags := Flag.CARRY | .PARITY | .AUX_CARRY | .SIGN;
+    store_register(*expected, .FLAG, cast(u16) flags);
+
+    return !memcmp(*expected, state, size_of(Processor_State));
 }
 
 run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
