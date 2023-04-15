@@ -1484,6 +1484,11 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
     src: u32 = cast(u32) load_operand(state, inst.src);
 
     // TODO(ryan): only supports 16-bit ops
+    assert(inst.dst.size == .WORD || inst.src.size == .WORD ||
+        (inst.dst.type == .REGISTER && register_def(inst.dst.reg).size == 2) ||
+        (inst.src.type == .REGISTER && register_def(inst.src.reg).size == 2));
+    operand_mask := 0xFFFF;
+    sign_mask    := 0x8000;
 
     if inst.type == .SUB || inst.type == .CMP
         src = ((~src) + 1) & 0xFFFF;
@@ -1494,13 +1499,13 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
     if inst.type == {
         case .ADD;
             value32 = dst + src;
-            carry     = cast(bool)  (value32 & 0x1_0000);
+            carry     = cast(bool)  (value32 & (operand_mask + 1));
             aux_carry = cast(bool) ((value32 ^ dst ^ src) & 0x10);
 
         case .SUB; #through;
         case .CMP;
             value32 = dst + src; // with two's-complement src
-            carry     = ! cast(bool)  (value32 & 0x1_0000);
+            carry     = ! cast(bool)  (value32 & (operand_mask + 1));
             aux_carry = ! cast(bool) ((value32 ^ dst ^ src) & 0x10);
     }
 
@@ -1511,11 +1516,11 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
     // load, overwrite some flags, and store
     flags: u16 = load_register(state, .FLAG);
     {
-        set_flag(*flags, Flag.SIGN,      cast(bool) value & 0x8000);
+        set_flag(*flags, Flag.SIGN,      cast(bool) value & sign_mask);
         set_flag(*flags, Flag.ZERO,      value == 0);
         set_flag(*flags, Flag.CARRY,     carry);
         set_flag(*flags, Flag.AUX_CARRY, aux_carry);
-        set_flag(*flags, Flag.OVERFLOW,  cast(bool) (~(src ^ dst) & 0x8000) & ((value ^ dst) & 0x8000));
+        set_flag(*flags, Flag.OVERFLOW,  cast(bool) (~(src ^ dst) & sign_mask) & ((value ^ dst) & sign_mask));
 
         // parity (low-order 8-bits have even number of set bits)
         set_count := 0;
