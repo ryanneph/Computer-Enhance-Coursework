@@ -73,8 +73,16 @@ flags_equal :: inline (state: *Processor_State, flags: Flag) -> bool {
     return (load_register(state, .FLAG) & cast(u16) flags) == cast(u16) flags;
 }
 
+processor_state_equal :: (state: *Processor_State, expected: *Processor_State) -> bool {
+    equal := true;
+    equal &= !memcmp(expected.register_memory.data, state.register_memory.data, size_of(type_of(expected.register_memory)));
+    equal &= state.ip == expected.ip;
+    return equal;
+}
+
 validate_immediate_movs :: (state: *Processor_State) -> bool {
     expected: Processor_State;
+    expected.ip = state.ip;
     store_register(*expected, .AX, 1);
     store_register(*expected, .BX, 2);
     store_register(*expected, .CX, 3);
@@ -84,11 +92,12 @@ validate_immediate_movs :: (state: *Processor_State) -> bool {
     store_register(*expected, .SI, 7);
     store_register(*expected, .DI, 8);
 
-    return !memcmp(*expected, state, size_of(Processor_State));
+    return processor_state_equal(*expected, state);
 }
 
 validate_register_movs :: (state: *Processor_State) -> bool {
     expected: Processor_State;
+    expected.ip = state.ip;
     store_register(*expected, .AX, 4);
     store_register(*expected, .BX, 3);
     store_register(*expected, .CX, 2);
@@ -98,11 +107,12 @@ validate_register_movs :: (state: *Processor_State) -> bool {
     store_register(*expected, .SI, 3);
     store_register(*expected, .DI, 4);
 
-    return !memcmp(*expected, state, size_of(Processor_State));
+    return processor_state_equal(*expected, state);
 }
 
 validate_challenge_register_movs :: (state: *Processor_State) -> bool {
     expected: Processor_State;
+    expected.ip = state.ip;
     store_register(*expected, .AX, 0x4411);
     store_register(*expected, .BX, 0x3344);
     store_register(*expected, .CX, 0x6677);
@@ -115,11 +125,12 @@ validate_challenge_register_movs :: (state: *Processor_State) -> bool {
     store_register(*expected, .SS, 0x4411);
     store_register(*expected, .DS, 0x3344);
 
-    return !memcmp(*expected, state, size_of(Processor_State));
+    return processor_state_equal(*expected, state);
 }
 
 validate_add_sub_cmp :: (state: *Processor_State) -> bool {
     expected: Processor_State;
+    expected.ip = state.ip;
     store_register(*expected, .BX, 0xE102);
     store_register(*expected, .CX, 0x0F01);
     store_register(*expected, .SP, 0x03E6);
@@ -128,11 +139,12 @@ validate_add_sub_cmp :: (state: *Processor_State) -> bool {
     flags := Flag.PARITY | .ZERO;
     store_register(*expected, .FLAG, cast(u16) flags);
 
-    return !memcmp(*expected, state, size_of(Processor_State));
+    return processor_state_equal(*expected, state);
 }
 
 validate_challenge_flags :: (state: *Processor_State) -> bool {
     expected: Processor_State;
+    expected.ip = state.ip;
     store_register(*expected, .BX, 0x9CA5);
     store_register(*expected, .DX, 0x000A);
     store_register(*expected, .SP, 0x0063);
@@ -141,24 +153,29 @@ validate_challenge_flags :: (state: *Processor_State) -> bool {
     flags := Flag.CARRY | .PARITY | .AUX_CARRY | .SIGN;
     store_register(*expected, .FLAG, cast(u16) flags);
 
-    return !memcmp(*expected, state, size_of(Processor_State));
+    return processor_state_equal(*expected, state);
+}
+
+validate_ip_register :: (state: *Processor_State) -> bool {
+    expected: Processor_State;
+    expected.ip = 0x000E;
+    store_register(*expected, .BX, 0x07D0);
+    store_register(*expected, .CX, 0xFCE0);
+
+    flags := Flag.CARRY | .SIGN | .AUX_CARRY; // BUG(ryanneph): no AUX_CARRY
+    store_register(*expected, .FLAG, cast(u16) flags);
+
+    return processor_state_equal(*expected, state);
 }
 
 run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
     encoded_filename := path_join(TEST_TEMP_DIR, path_basename(asm_filename));
     assemble(asm_filename, encoded_filename);
 
-    bytes: []u8 = file_read_all_as_bytes(encoded_filename);
+    inst_memory: Memory_Region = file_read_all_as_bytes(encoded_filename);
 
     state: Processor_State;
-    offset := 0;
-    while offset < bytes.count {
-        head := bytes.data + offset;
-        inst, advance := decode_once(head);
-        offset += advance;
-
-        exec_instruction(*state, inst);
-    }
+    execute_from_ip(*state, inst_memory);
 
     return payload.validate_proc(*state);
 }
@@ -235,6 +252,7 @@ init_tests :: () -> []Test {
     add_test("listing_0045_challenge_register_movs.asm", decode_subtest, make_exec_subtest(validate_challenge_register_movs));
     add_test("listing_0046_add_sub_cmp.asm",             decode_subtest, make_exec_subtest(validate_add_sub_cmp));
     add_test("listing_0047_challenge_flags.asm",         decode_subtest, make_exec_subtest(validate_challenge_flags));
+    add_test("listing_0048_ip_register.asm",             decode_subtest, make_exec_subtest(validate_ip_register));
 
     return tests;
 }

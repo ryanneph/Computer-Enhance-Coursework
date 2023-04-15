@@ -9,6 +9,15 @@ DEBUG_EXEC   := true;
 DEBUG_TEST   := false;
 formatHex :: #bake_arguments formatInt(base=16);
 
+Memory_Region :: []u8;
+
+Processor_State :: struct {
+    register_memory: [26]u8;
+    memory: [1024 * 1024]u8;
+    ip: s64;
+    flags: Flag;
+}
+
 Flag :: enum_flags {
     CARRY;
     PARITY;
@@ -1378,11 +1387,6 @@ disassemble_file :: (filename: string, output_asm_path: string="out.asm") {
     file_close(*file);
 }
 
-Processor_State :: struct {
-    register_memory: [26]u8;
-    memory: [1024 * 1024]u8;
-    flags: u8;
-}
 flags_to_string :: (state: Processor_State, allocator: Allocator = temporary_allocator) -> string {
     builder: String_Builder;
     builder.allocator = temporary_allocator;
@@ -1548,20 +1552,24 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
     }
 }
 
+execute_from_ip :: (state: *Processor_State, inst_memory: Memory_Region) {
+    while state.ip < inst_memory.count {
+        head := inst_memory.data + state.ip;
+        inst, advance := decode_once(head);
+
+        exec_instruction(state, inst);
+
+        new_ip := state.ip + advance;
+        state.ip = new_ip;
+    }
+}
+
 execute_file :: (filename: string) {
-    bytes: []u8 = file_read_all_as_bytes(filename);
+    inst_memory: Memory_Region = file_read_all_as_bytes(filename);
 
     DEBUG_DECODE = false;
     state: Processor_State;
-
-    offset := 0;
-    while offset < bytes.count {
-        head := bytes.data + offset;
-        inst, advance := decode_once(head);
-        offset += advance;
-
-        exec_instruction(*state, inst);
-    }
+    execute_from_ip(*state, inst_memory);
 
     print("\n");
     print_processor_state(state);
