@@ -137,7 +137,7 @@ validate_add_sub_cmp :: (state: *Processor_State) -> bool {
     store_register(*expected, .BP, 0x0000);
 
     flags := Flag.PARITY | .ZERO;
-    store_register(*expected, .FLAG, cast(u16) flags);
+    store_flags(*expected, flags);
 
     return processor_state_equal(*expected, state);
 }
@@ -151,7 +151,7 @@ validate_challenge_flags :: (state: *Processor_State) -> bool {
     store_register(*expected, .BP, 0x0062);
 
     flags := Flag.CARRY | .PARITY | .AUX_CARRY | .SIGN;
-    store_register(*expected, .FLAG, cast(u16) flags);
+    store_flags(*expected, flags);
 
     return processor_state_equal(*expected, state);
 }
@@ -163,7 +163,18 @@ validate_ip_register :: (state: *Processor_State) -> bool {
     store_register(*expected, .CX, 0xFCE0);
 
     flags := Flag.CARRY | .SIGN | .AUX_CARRY; // BUG(ryanneph): no AUX_CARRY
-    store_register(*expected, .FLAG, cast(u16) flags);
+    store_flags(*expected, flags);
+
+    return processor_state_equal(*expected, state);
+}
+
+validate_conditional_jumps :: (state: *Processor_State) -> bool {
+    expected: Processor_State;
+    expected.ip = 0x000E;
+    store_register(*expected, .BX, 0x0406);
+
+    flags := Flag.PARITY | .ZERO;
+    store_flags(*expected, flags);
 
     return processor_state_equal(*expected, state);
 }
@@ -253,6 +264,7 @@ init_tests :: () -> []Test {
     add_test("listing_0046_add_sub_cmp.asm",             decode_subtest, make_exec_subtest(validate_add_sub_cmp));
     add_test("listing_0047_challenge_flags.asm",         decode_subtest, make_exec_subtest(validate_challenge_flags));
     add_test("listing_0048_ip_register.asm",             decode_subtest, make_exec_subtest(validate_ip_register));
+    add_test("listing_0049_conditional_jumps.asm",       decode_subtest, make_exec_subtest(validate_conditional_jumps));
 
     return tests;
 }

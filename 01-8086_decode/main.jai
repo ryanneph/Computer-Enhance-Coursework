@@ -1427,6 +1427,7 @@ print_processor_state :: (state: Processor_State) {
     print_register_word(.SI);
     print_register_word(.DI);
 
+    print("    ip: 0x%\n", formatHex(state.ip, minimum_digits=4));
     print("    flags: %\n", flags_to_string(state));
 }
 
@@ -1435,6 +1436,10 @@ store_register :: (state: *Processor_State, register: Register, value: u16) {
     state.register_memory[reg.offset] = cast(u8)(value & 0xFF);
     if reg.size >= 2
         state.register_memory[reg.offset + 1] = cast(u8)((value >> 8) & 0xFF);
+}
+
+store_flags :: inline (state: *Processor_State, flags: Flag) {
+    store_register(state, .FLAG, cast(u16) flags);
 }
 
 store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
@@ -1452,12 +1457,18 @@ load_register :: (state: Processor_State, register: Register) -> u16 {
     return value;
 }
 
+load_flags :: inline (state: Processor_State) -> Flag {
+    return cast(Flag) load_register(state, .FLAG);
+}
+
 load_operand :: (state: Processor_State, operand: Operand) -> u16 {
     if operand.type == {
         case .IMMEDIATE;
             return operand.imm.val;
         case .REGISTER;
             return load_register(state, operand.reg);
+        case;
+            assert(false, "operand type % not implemented", operand.type);
     }
     return 1 << 16 - 1;
 }
@@ -1537,6 +1548,25 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
         print("% ; %:0x%->0x% flags:%->%\n", instruction_to_string(inst), operand_to_string(inst, inst.dst),
             formatHex(dst), formatHex(value), original_flags, flags_to_string(state));
 }
+exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
+    assert(inst.type == .JNE_JNZ, "% is not yet a supported conditional jump type.");
+
+    original_ip: s64;
+    if DEBUG_EXEC
+        original_ip = state.ip;
+
+    flags := load_flags(state);
+
+    assert(inst.dst.type == .INCREMENT, "Expected relative offset (increment) operand");
+    rel := inst.dst.inc.val;
+
+    if !(flags & .ZERO)
+        state.ip += rel;
+
+    if DEBUG_EXEC {
+        print("% ; ip:0x%->0x%\n", instruction_to_string(inst), formatHex(original_ip), formatHex(state.ip));
+    }
+}
 exec_instruction :: (state: *Processor_State, inst: Instruction) {
     if inst.type == {
         case .MOV; exec_mov(state, inst);
@@ -1547,6 +1577,8 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
         case .SUB;
         // case .SBB; #through;
             exec_arithmetic(state, inst);
+        case .JNE_JNZ;
+            exec_conditional_jump(state, inst);
         case;
             assert(false, "EXEC for instruction type '%' is not implemented.\n", inst.type);
     }
@@ -1557,10 +1589,10 @@ execute_from_ip :: (state: *Processor_State, inst_memory: Memory_Region) {
         head := inst_memory.data + state.ip;
         inst, advance := decode_once(head);
 
-        exec_instruction(state, inst);
-
         new_ip := state.ip + advance;
         state.ip = new_ip;
+
+        exec_instruction(state, inst);
     }
 }
 
