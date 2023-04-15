@@ -1549,19 +1549,34 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
             formatHex(dst), formatHex(value), original_flags, flags_to_string(state));
 }
 exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
-    assert(inst.type == .JNE_JNZ, "% is not yet a supported conditional jump type.");
+    flags := load_flags(state);
+
+    do_jump: bool;
+    if inst.type == {
+        case .JNE_JNZ;     do_jump = !  (flags & .ZERO);
+        case .JE_JZ;       do_jump = xx (flags & .ZERO);
+        case .JNB_JAE_JNC; do_jump = !  (flags & .CARRY);
+        case .JB_JNAE_JC;  do_jump = xx (flags & .CARRY);
+        case .JNP_JPO;     do_jump = !  (flags & .PARITY);
+        case .JP_JPE;      do_jump = xx (flags & .PARITY);
+        case .LOOPZ; #through;
+        case .LOOPNZ;
+            // TODO(ryanneph): This must set the zero (and other) flag as needed
+            cx := load_register(state, .CX);
+            cx -= 1;
+            do_jump = ifx inst.type == .LOOPNZ then cx != 0 else cx == 0;
+            store_register(state, .CX, cx);
+        case; assert(false, "% is not yet a supported conditional jump type.", inst.type);
+    }
+
+    assert(inst.dst.type == .INCREMENT, "Expected relative offset (increment) operand");
+    rel := inst.dst.inc.val;
 
     original_ip: s64;
     if DEBUG_EXEC
         original_ip = state.ip;
 
-    flags := load_flags(state);
-
-    assert(inst.dst.type == .INCREMENT, "Expected relative offset (increment) operand");
-    rel := inst.dst.inc.val;
-
-    if !(flags & .ZERO)
-        state.ip += rel;
+    if do_jump  state.ip += rel;
 
     if DEBUG_EXEC {
         print("% ; ip:0x%->0x%\n", instruction_to_string(inst), formatHex(original_ip), formatHex(state.ip));
@@ -1577,7 +1592,28 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
         case .SUB;
         // case .SBB; #through;
             exec_arithmetic(state, inst);
-        case .JNE_JNZ;
+        case .JBE_JNA;     #through;
+        case .JB_JNAE_JC;  #through;
+        case .JCXZ;        #through;
+        case .JE_JZ;       #through;
+        case .JLE_JNG;     #through;
+        case .JL_JNGE;     #through;
+        case .JMP;         #through;
+        case .JMPF;        #through;
+        case .JNBE_JA;     #through;
+        case .JNB_JAE_JNC; #through;
+        case .JNE_JNZ;     #through;
+        case .JNLE_JG;     #through;
+        case .JNL_JGE;     #through;
+        case .JNO;         #through;
+        case .JNP_JPO;     #through;
+        case .JNS;         #through;
+        case .JO;          #through;
+        case .JP_JPE;      #through;
+        case .JS;          #through;
+        case .LOOPNZ;      #through;
+        case .LOOPZ;       #through;
+        case .LOOP;
             exec_conditional_jump(state, inst);
         case;
             assert(false, "EXEC for instruction type '%' is not implemented.\n", inst.type);

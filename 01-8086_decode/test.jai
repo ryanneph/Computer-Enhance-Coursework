@@ -179,6 +179,18 @@ validate_conditional_jumps :: (state: *Processor_State) -> bool {
     return processor_state_equal(*expected, state);
 }
 
+validate_challenge_jumps :: (state: *Processor_State) -> bool {
+    expected: Processor_State;
+    expected.ip = 0x001C;
+    store_register(*expected, .AX, 0x000D);
+    store_register(*expected, .BX, 0xFFFB);
+
+    flags := Flag.CARRY | .AUX_CARRY | .SIGN;
+    store_flags(*expected, flags);
+
+    return processor_state_equal(*expected, state);
+}
+
 run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
     encoded_filename := path_join(TEST_TEMP_DIR, path_basename(asm_filename));
     assemble(asm_filename, encoded_filename);
@@ -265,6 +277,7 @@ init_tests :: () -> []Test {
     add_test("listing_0047_challenge_flags.asm",         decode_subtest, make_exec_subtest(validate_challenge_flags));
     add_test("listing_0048_ip_register.asm",             decode_subtest, make_exec_subtest(validate_ip_register));
     add_test("listing_0049_conditional_jumps.asm",       decode_subtest, make_exec_subtest(validate_conditional_jumps));
+    add_test("listing_0050_challenge_jumps.asm",         decode_subtest, make_exec_subtest(validate_challenge_jumps));
 
     return tests;
 }
