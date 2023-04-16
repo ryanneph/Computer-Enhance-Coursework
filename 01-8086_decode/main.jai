@@ -1384,15 +1384,15 @@ flags_to_string :: (state: Processor_State, allocator: Allocator = temporary_all
     return builder_to_string(*builder, allocator);
 }
 print_processor_state :: (state: Processor_State) {
+    formatInt8  :: #bake_arguments formatInt(minimum_digits=3, padding=#char " ");
+    formatInt16 :: #bake_arguments formatInt(minimum_digits=5, padding=#char " ");
     print_register_word :: (reg: Register, low: Register = .INVALID, high: Register = .INVALID) #expand {
         value: u16 = load_register(*state, reg);
         low_value  : u8 = cast,no_check(u8) value;
         high_value : u8 = cast(u8) (value >> 8);
 
         print("    %: 0x% (%) [low=%, high=%]\n", register_def(reg).name, formatHex(value, minimum_digits=4),
-            formatInt(value, minimum_digits=5, padding=#char " "),
-            formatInt(low_value, minimum_digits=3, padding=#char " "),
-            formatInt(high_value, minimum_digits=3, padding=#char " "));
+            formatInt16(value), formatInt8(low_value), formatInt8(high_value));
     }
 
     print("Processor State\n");
@@ -1406,7 +1406,7 @@ print_processor_state :: (state: Processor_State) {
     print_register_word(.SI);
     print_register_word(.DI);
 
-    print("    ip: 0x%\n", formatHex(state.ip, minimum_digits=4));
+    print("    ip: 0x% (%)\n", formatHex(state.ip, minimum_digits=4), formatInt16(state.ip));
     print("    flags: %\n", flags_to_string(state));
 }
 
