@@ -364,7 +364,6 @@ Instruction :: struct {
 
     segment_override: Register;
 
-    // TODO(ryan): maybe store *Opcode_Info for indirection instead?
     desc: string;
 
     // For single operand instructions, only dst is used
@@ -1411,6 +1410,21 @@ print_processor_state :: (state: Processor_State) {
     print("    flags: %\n", flags_to_string(state));
 }
 
+effective_address :: (state: *Processor_State, mem: Memory) -> u16 {
+    assert(mem.mode != .INVALID, "Invalid memory mode.");
+
+    if mem.mode == .DIRECT
+        return mem.direct;
+
+    addr := load_register(state, mem.reg1);
+    if mem.reg2 != .INVALID
+        addr += load_register(state, mem.reg2);
+    if mem.mode != .NO_DISP
+        addr += mem.disp;
+
+    return addr;
+}
+
 store_register :: (state: *Processor_State, register: Register, value: u16) {
     reg := register_def(register);
     state.register_memory[reg.offset] = cast(u8)(value & 0xFF);
@@ -1426,10 +1440,17 @@ store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
     if operand.type == {
         case .REGISTER;
             store_register(state, operand.reg, value);
+        case .MEMORY;
+            addr := effective_address(state, operand.mem);
+            if operand.mem.word then
+                <<(cast(*u16)(*state.memory[addr])) = value;
+            else
+                state.memory[addr] = cast(u8) value;
     }
 }
 
 load_register :: (state: Processor_State, register: Register) -> u16 {
+    assert(register != .INVALID, "Invalid register.");
     reg := register_def(register);
     value: u16 =  state.register_memory[reg.offset];
     if reg.size >= 2
@@ -1447,6 +1468,12 @@ load_operand :: (state: Processor_State, operand: Operand) -> u16 {
             return operand.imm.val;
         case .REGISTER;
             return load_register(state, operand.reg);
+        case .MEMORY;
+            addr := effective_address(*state, operand.mem);
+            if operand.mem.word
+                return <<(cast(*u16) (*state.memory[addr]));
+            else
+                return state.memory[addr];
         case;
             assert(false, "operand type % not implemented", operand.type);
     }
@@ -1466,9 +1493,10 @@ exec_mov :: (state: *Processor_State, inst: Instruction) {
     value := load_operand(state, inst.src);
     store_operand(state, inst.dst, value);
 
-    if DEBUG_EXEC
+    if DEBUG_EXEC {
         print("% ; %:0x%->0x%\n", instruction_to_string(inst), operand_to_string(inst, inst.dst),
-            formatHex(original), formatHex(value));
+        formatHex(original), formatHex(value));
+    }
 }
 exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
     original_flags: string;
