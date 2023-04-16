@@ -103,6 +103,7 @@ Memory_Mode :: enum {
 
 Memory :: struct  {
     mode: Memory_Mode;
+    word: bool; // true: 16-bit, false: 8-bit
     union {
         struct {
             reg1: Register;
@@ -125,14 +126,8 @@ Operand_Type :: enum {
     IMMEDIATE;
     INCREMENT;
 }
-Operand_Size :: enum {
-    IMPLICIT;
-    BYTE;
-    WORD;
-}
 Operand :: struct {
     type: Operand_Type;
-    size: Operand_Size;
     union {
         reg: Register;
         mem: Memory;
@@ -364,7 +359,8 @@ Instruction :: struct {
     operand_count := Operand_Count.BINARY;
     mode: Memory_Mode;
     flags: Instruction_Flags;
-    size: u32;
+    explicit_size: bool; // requires explicit operand size prefix ("byte"/"word")
+    size: u32; // of encoded instruction
 
     segment_override: Register;
 
@@ -498,17 +494,17 @@ operand_register :: inline (reg: Register) -> Operand {
 operand_segment :: inline (seg: u8) -> Operand {
     return Operand.{ type = .REGISTER, reg = segment(seg) };
 }
-operand_memory_direct :: inline (addr: u16) -> Operand {
-    return Operand.{ type = .MEMORY, mem = Memory.{ mode = .DIRECT, direct = addr } };
+operand_memory_direct :: inline (addr: u16, word: bool) -> Operand {
+    return Operand.{ type = .MEMORY, mem = Memory.{ mode = .DIRECT, word = word, direct = addr } };
 }
 immediate :: inline (low: u8, high: u8 = 0) -> u16 {
     return ((cast(u16)high) << 8) | cast(u16)low;
 }
-operand_immediate_u16 :: inline (value: u16, size: Operand_Size = .IMPLICIT) -> Operand {
-    return Operand.{ type = .IMMEDIATE, size = size, imm = Immediate.{ val = value }};
+operand_immediate_u16 :: inline (value: u16) -> Operand {
+    return Operand.{ type = .IMMEDIATE, imm = Immediate.{ val = value }};
 }
-operand_immediate :: inline (low: u8, high: u8 = 0, size: Operand_Size = .IMPLICIT) -> Operand {
-    return Operand.{ type = .IMMEDIATE, size = size, imm = Immediate.{ val = immediate(low, high) }};
+operand_immediate :: inline (low: u8, high: u8 = 0) -> Operand {
+    return Operand.{ type = .IMMEDIATE, imm = Immediate.{ val = immediate(low, high) }};
 }
 operand_increment :: inline (low: u8) -> Operand {
     return Operand.{ type = .INCREMENT, inc = Increment.{ val = cast(s16)(cast,no_check(s8)low) } };
@@ -537,25 +533,18 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             }
             return builder_to_string(*builder);
         case .IMMEDIATE;
-            explicit_size := "";
-            if      operand.size == .BYTE  explicit_size = "byte ";
-            else if operand.size == .WORD  explicit_size = "word ";
-
             if inst.flags & .FAR_SEGMENT
-                return tprint("%0%:%", explicit_size, operand.far_segment, operand.imm.val);
+                return tprint("%:%", operand.far_segment, operand.imm.val);
             else
-                return tprint("%0%0", explicit_size, operand.imm.val);
+                return tprint("%", operand.imm.val);
         case .MEMORY; {
             mem := *operand.mem;
 
             builder: String_Builder;
             builder.allocator = temporary_allocator;
 
-            // push/pop require it
-            if operand.size == .BYTE
-                print_to_builder(*builder, "byte ");
-            else if operand.size == .WORD
-                print_to_builder(*builder, "word ");
+            if inst.explicit_size
+                print_to_builder(*builder, ifx mem.word then "word " else "byte ");
 
             segment_prefix := "";
             if inst.flags & .SEGMENT_OVERRIDE
@@ -589,31 +578,29 @@ sign_extend :: (value: u8) -> u16 {
     return cast,no_check(u16) extended;
 }
 
-_decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8, implicit_size: bool = false) -> (Operand, bytes_read: s32) {
+_decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8) -> (Operand, bytes_read: s32) {
     advance_count: s32;
     imm: Operand;
 
     if (!field_w || field_s) {
         field_low := <<(head_imm);
         if !field_s
-            imm = operand_immediate(field_low, 0, .BYTE);
+            imm = operand_immediate(field_low, 0);
         else {
-            imm = operand_immediate_u16(sign_extend(field_low), .WORD);
+            imm = operand_immediate_u16(sign_extend(field_low));
         }
         advance_count = 1;
     } else {
         field_low  := <<(head_imm);
         field_high := <<(head_imm + 1);
-        imm = operand_immediate(field_low, field_high, .WORD);
+        imm = operand_immediate(field_low, field_high);
         advance_count = 2;
     }
-
-    imm.size = ifx implicit_size then .IMPLICIT else imm.size;
 
     return imm, advance_count;
 }
 
-_decode_rm :: (head_disp: *u8, field_mod: u8, field_rm: u8, field_w: u8, explicit_size: bool = false)
+_decode_rm :: (head_disp: *u8, field_mod: u8, field_rm: u8, field_w: u8)
            -> (Operand, bytes_read: s32)
 {
     rm: Operand;
@@ -661,12 +648,11 @@ _decode_rm :: (head_disp: *u8, field_mod: u8, field_rm: u8, field_w: u8, explici
             // DIRECT ADDRESSING
             field_low  := <<(head_disp);
             field_high := <<(head_disp + 1);
-            rm = operand_memory_direct(immediate(field_low, field_high));
+            rm = operand_memory_direct(immediate(field_low, field_high), cast(bool) field_w);
             advance_count = 2;
         }
 
-        if explicit_size
-            rm.size = ifx field_w then Operand_Size.WORD else .BYTE;
+        rm.mem.word = cast(bool) field_w;
     }
 
     return rm, advance_count;
@@ -702,6 +688,7 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     field_rm   := (<<(head + 1) & 0b0000_0111);
 
     inst.desc = "immediate to register/memory";
+    inst.explicit_size = true;
 
     // the instruction is not known from the first byte, so we must determine in this dispatch
     // handler.
@@ -731,9 +718,9 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
         inst.type = .TEST;
 
     offset: s32 = 2;
-    rm, extra_advance := _decode_rm(head + offset, field_mod, field_rm, field_w, explicit_size=true);
+    rm, extra_advance := _decode_rm(head + offset, field_mod, field_rm, field_w);
     offset += extra_advance;
-    imm, extra_advance2 := _decode_immediate(head + offset, field_s, field_w, implicit_size=true);
+    imm, extra_advance2 := _decode_immediate(head + offset, field_s, field_w);
     offset += extra_advance2;
 
     inst.src = imm;
@@ -785,11 +772,12 @@ decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.type = inst_table[field_inst];
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
-    rm, extra_advance := _decode_rm(head + 2, field_mod, field_rm, field_w, explicit_size=true);
+    rm, extra_advance := _decode_rm(head + 2, field_mod, field_rm, field_w);
 
     inst.desc = "bit manipulation of register/memory by 1 or value in cl register";
     inst.src = ifx !field_v then operand_immediate(1) else operand_register(.CL);
     inst.dst = rm;
+    inst.explicit_size = true;
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, v=% w=%, mod=% inst=% rm=%} (%)\n",
@@ -973,7 +961,7 @@ decode_mov_accumulator :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     field_high := <<(head + 2);
 
     reg := operand_register(ifx field_w then Register.AX else Register.AL);
-    mem := operand_memory_direct(immediate(field_low, field_high));
+    mem := operand_memory_direct(immediate(field_low, field_high), word=cast(bool) field_w);
 
     inst.dst = ifx field_to_mem then mem else reg;
     inst.src = ifx field_to_mem then reg else mem;
@@ -1017,9 +1005,10 @@ decode_mov_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) 
     offset: s32 = 2;
     rm, extra_advance := _decode_rm(head + offset, field_mod, field_rm, field_w);
     inst.dst = rm;
+    inst.explicit_size = rm.type != .REGISTER;
     offset += extra_advance;
 
-    imm, extra_advance2 := _decode_immediate(head + offset, 0, field_w, implicit_size=rm.type == .REGISTER);
+    imm, extra_advance2 := _decode_immediate(head + offset, 0, field_w);
     inst.src = imm;
     offset += extra_advance2;
 
@@ -1228,8 +1217,9 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     }
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
-    rm, extra_advance := _decode_rm(head + 2, field_mod, field_rm, field_w, explicit_size);
+    rm, extra_advance := _decode_rm(head + 2, field_mod, field_rm, field_w);
     inst.dst = rm;
+    inst.explicit_size = explicit_size;
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, w=% mod=% rm=%} (%)\n",
@@ -1489,8 +1479,7 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
     src: u32 = cast(u32) load_operand(state, inst.src);
 
     // TODO(ryan): only supports 16-bit ops
-    assert(inst.dst.size == .WORD || inst.src.size == .WORD ||
-        (inst.dst.type == .REGISTER && register_def(inst.dst.reg).size == 2) ||
+    assert((inst.dst.type == .REGISTER && register_def(inst.dst.reg).size == 2) ||
         (inst.src.type == .REGISTER && register_def(inst.src.reg).size == 2));
     operand_mask := 0xFFFF;
     sign_mask    := 0x8000;
