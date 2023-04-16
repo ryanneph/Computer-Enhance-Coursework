@@ -93,36 +93,24 @@ segment :: inline (field_seg: u8) -> Register {
     return cast(Register)(cast(s32)Register.FIRST_SEGMENT + field_seg);
 }
 
-effective_address_table :: Memory.[
-    .{ reg1 = .BX, reg2 = .SI,      },
-    .{ reg1 = .BX, reg2 = .DI,      },
-    .{ reg1 = .BP, reg2 = .SI,      },
-    .{ reg1 = .BP, reg2 = .DI,      },
-    .{ reg1 = .SI, reg2 = .INVALID, },
-    .{ reg1 = .DI, reg2 = .INVALID, },
-    .{ reg1 = .BP, reg2 = .INVALID, },
-    .{ reg1 = .BX, reg2 = .INVALID, },
-];
-
 Memory_Mode :: enum {
-    MEM_NO_DISP :: 0b00;
-    MEM_DISP_8  :: 0b01;
-    MEM_DISP_16 :: 0b10;
-    REGISTER    :: 0b11;
-    MEM_DIRECT;
-}
-memory_mode :: inline (mod: u8) -> Memory_Mode {
-    assert(!(mod & ~0x03));
-    return cast(Memory_Mode)mod;
+    INVALID :: 0;
+    NO_DISP;
+    DISP_U8;
+    DISP_U16;
+    DIRECT;
 }
 
-Memory :: union {
-    struct {
-        reg1: Register;
-        reg2: Register;
-        disp: u16;
+Memory :: struct  {
+    mode: Memory_Mode;
+    union {
+        struct {
+            reg1: Register;
+            reg2: Register;
+            disp: u16;
+        };
+        direct: u16;
     };
-    direct: u16;
 }
 Immediate :: struct {
     val: u16;
@@ -510,19 +498,8 @@ operand_register :: inline (reg: Register) -> Operand {
 operand_segment :: inline (seg: u8) -> Operand {
     return Operand.{ type = .REGISTER, reg = segment(seg) };
 }
-operand_memory :: inline (mem: Memory) -> Operand {
-    return Operand.{ type = .MEMORY, mem = mem };
-}
-operand_memory :: inline (field_rm: u8, disp: u16) -> Operand {
-    assert(field_rm < effective_address_table.count);
-    operand: Operand;
-    operand.type = .MEMORY;
-    operand.mem = effective_address_table[field_rm];
-    operand.mem.disp = disp;
-    return operand;
-}
 operand_memory_direct :: inline (addr: u16) -> Operand {
-    return Operand.{ type = .MEMORY, mem = Memory.{ direct = addr } };
+    return Operand.{ type = .MEMORY, mem = Memory.{ mode = .DIRECT, direct = addr } };
 }
 immediate :: inline (low: u8, high: u8 = 0) -> u16 {
     return ((cast(u16)high) << 8) | cast(u16)low;
@@ -553,7 +530,7 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             // TODO(ryan): We could emit labels instead with a slightly more sophisticated disassembly loop.
             print_to_builder(*builder, "$+%", inst.size);
 
-            inc := inst.dst.inc.val;
+            inc := operand.inc.val;
             if (inc) {
                 if inc > 0  print_to_builder(*builder, " + %", inc);
                 else        print_to_builder(*builder, " - %", -inc);
@@ -584,14 +561,14 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             if inst.flags & .SEGMENT_OVERRIDE
                 segment_prefix = tprint("%:", register_def(inst.segment_override).name);
 
-            if inst.mode == .MEM_DIRECT {
+            if mem.mode == .DIRECT {
                 print_to_builder(*builder, "[%0%]", segment_prefix, mem.direct);
             } else {
                 print_to_builder(*builder, "[%0%", segment_prefix, register_def(mem.reg1).name);
                 if mem.reg2 != .INVALID
                     print_to_builder(*builder, " + %", register_def(mem.reg2).name);
                 if mem.disp {
-                    disp := ifx inst.mode == .MEM_DISP_8 then
+                    disp := ifx mem.mode == .DISP_U8 then
                         cast,no_check(s8)mem.disp else
                         cast,no_check(s16)mem.disp;
                     if disp > 0  print_to_builder(*builder, " + %", disp);
@@ -636,38 +613,59 @@ _decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8, implicit_size: bo
     return imm, advance_count;
 }
 
-_decode_rm :: (head_disp: *u8, in_mode: *Memory_Mode, field_rm: u8, field_w: u8, explicit_size: bool = false)
+_decode_rm :: (head_disp: *u8, field_mod: u8, field_rm: u8, field_w: u8, explicit_size: bool = false)
            -> (Operand, bytes_read: s32)
 {
-    advance_count: s32;
     rm: Operand;
-    mode := <<in_mode;
+    advance_count: s32;
 
-    if (mode == .REGISTER) {
+    assert(field_mod <= 3, "Invalid register/memory mode '%'", field_mod);
+    if field_mod == 0b11 {
         rm = operand_register(field_rm, field_w);
         advance_count = 0;
     } else {
-        rm = operand_memory(field_rm, 0);
+        rm.type = .MEMORY;
+        rm.mem = effective_address_table[field_rm];
 
-        if (mode != .MEM_NO_DISP) {
-            field_low  := <<(head_disp);
-            field_high := ifx mode == .MEM_DISP_16 then <<(head_disp + 1) else 0;
-            rm.mem.disp = immediate(field_low, field_high);
+        effective_address_table :: Memory.[
+            .{ reg1 = .BX, reg2 = .SI,      },
+            .{ reg1 = .BX, reg2 = .DI,      },
+            .{ reg1 = .BP, reg2 = .SI,      },
+            .{ reg1 = .BP, reg2 = .DI,      },
+            .{ reg1 = .SI, reg2 = .INVALID, },
+            .{ reg1 = .DI, reg2 = .INVALID, },
+            .{ reg1 = .BP, reg2 = .INVALID, },
+            .{ reg1 = .BX, reg2 = .INVALID, },
+        ];
+        assert(field_rm < effective_address_table.count);
+
+        if field_mod == {
+            case 0b00;
+                rm.mem.mode = .NO_DISP;
+                advance_count = 0;
+            case 0b01;
+                rm.mem.mode = .DISP_U8;
+                advance_count = 1;
+            case 0b10;
+                rm.mem.mode = .DISP_U16;
+                advance_count = 2;
+            case;
+                rm.mem.mode = .INVALID;
         }
 
-        if (field_rm == 0b110 && mode == .MEM_NO_DISP) {
+        if rm.mem.mode != .NO_DISP {
+            field_low  := <<(head_disp);
+            field_high := ifx rm.mem.mode == .DISP_U16 then <<(head_disp + 1) else 0;
+            rm.mem.disp = immediate(field_low, field_high);
+        } else if field_rm == 0b110 {
             // DIRECT ADDRESSING
             field_low  := <<(head_disp);
             field_high := <<(head_disp + 1);
-            <<in_mode = .MEM_DIRECT;
             rm = operand_memory_direct(immediate(field_low, field_high));
             advance_count = 2;
-        } else {
-            assert(mode < 3);
-            advance_count = cast(s32)mode;
         }
 
-        if (explicit_size)
+        if explicit_size
             rm.size = ifx field_w then Operand_Size.WORD else .BYTE;
     }
 
@@ -704,7 +702,6 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     field_rm   := (<<(head + 1) & 0b0000_0111);
 
     inst.desc = "immediate to register/memory";
-    inst.mode = memory_mode(field_mod);
 
     // the instruction is not known from the first byte, so we must determine in this dispatch
     // handler.
@@ -734,7 +731,7 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
         inst.type = .TEST;
 
     offset: s32 = 2;
-    rm, extra_advance := _decode_rm(head + offset, *inst.mode, field_rm, field_w, explicit_size=true);
+    rm, extra_advance := _decode_rm(head + offset, field_mod, field_rm, field_w, explicit_size=true);
     offset += extra_advance;
     imm, extra_advance2 := _decode_immediate(head + offset, field_s, field_w, implicit_size=true);
     offset += extra_advance2;
@@ -788,8 +785,7 @@ decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.type = inst_table[field_inst];
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
-    inst.mode = memory_mode(field_mod);
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w, explicit_size=true);
+    rm, extra_advance := _decode_rm(head + 2, field_mod, field_rm, field_w, explicit_size=true);
 
     inst.desc = "bit manipulation of register/memory by 1 or value in cl register";
     inst.src = ifx !field_v then operand_immediate(1) else operand_register(.CL);
@@ -827,9 +823,8 @@ decode_call_indirect_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count
 
     inst.desc = "indirect within segment";
     inst.operand_count = .UNARY;
-    inst.mode = memory_mode(field_mod);
 
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, 1);
+    rm, extra_advance := _decode_rm(head + 2, field_mod, field_rm, 1);
     inst.dst = rm;
 
     if DEBUG_DECODE {
@@ -947,7 +942,6 @@ decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32
         "load effective address to register",
     ];
 
-    inst.mode = memory_mode(field_mod);
     inst.desc = descs[field_sr];
 
     // LDS, LES (field_sr: 0)
@@ -958,7 +952,7 @@ decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     // computes effective address for source operand and store in register addressed by destination operand
 
     inst.dst = operand_register(field_reg, 1);
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, 1);
+    rm, extra_advance := _decode_rm(head + 2, field_mod, field_rm, 1);
     inst.src = rm;
 
     if DEBUG_DECODE {
@@ -971,7 +965,6 @@ decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32
 
 decode_mov_accumulator :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.desc = "memory to/from accumulator";
-    inst.mode = .MEM_DIRECT;
 
     field_to_mem := (<<head & 0b10) >> 1;
     field_w      :=  <<head & 0b01;
@@ -1020,14 +1013,13 @@ decode_mov_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) 
     field_rm  := (<<(head + 1) & 0b0000_0111);
 
     inst.desc = "move immediate to register";
-    inst.mode = memory_mode(field_mod);
 
     offset: s32 = 2;
-    rm, extra_advance := _decode_rm(head + offset, *inst.mode, field_rm, field_w);
+    rm, extra_advance := _decode_rm(head + offset, field_mod, field_rm, field_w);
     inst.dst = rm;
     offset += extra_advance;
 
-    imm, extra_advance2 := _decode_immediate(head + offset, 0, field_w, implicit_size=inst.mode == .REGISTER);
+    imm, extra_advance2 := _decode_immediate(head + offset, 0, field_w, implicit_size=rm.type == .REGISTER);
     inst.src = imm;
     offset += extra_advance2;
 
@@ -1109,7 +1101,6 @@ decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     field_reg  := (<<(head + 1) & 0b0011_1000) >> 3;
     field_rm   := (<<(head + 1) & 0b0000_0111);
 
-    inst.mode = memory_mode(field_mod);
     inst.desc = "Reg/memory with register to either";
 
     // Special case for move to/from segment register
@@ -1120,7 +1111,7 @@ decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     } else
         reg = operand_register(field_reg, field_w);
 
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w);
+    rm, extra_advance := _decode_rm(head + 2, field_mod, field_rm, field_w);
 
     inst.dst = ifx field_d then reg else rm;
     inst.src = ifx field_d then rm  else reg;
@@ -1190,7 +1181,6 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     inst.desc = "increment register/memory";
     inst.operand_count = .UNARY;
-    inst.mode = memory_mode(field_mod);
 
     explicit_size := true;
     if field_inst == {
@@ -1238,7 +1228,7 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     }
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
-    rm, extra_advance := _decode_rm(head + 2, *inst.mode, field_rm, field_w, explicit_size);
+    rm, extra_advance := _decode_rm(head + 2, field_mod, field_rm, field_w, explicit_size);
     inst.dst = rm;
 
     if DEBUG_DECODE {
@@ -1592,6 +1582,7 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
         case .SUB;
         // case .SBB; #through;
             exec_arithmetic(state, inst);
+
         case .JBE_JNA;     #through;
         case .JB_JNAE_JC;  #through;
         case .JCXZ;        #through;
@@ -1615,6 +1606,7 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
         case .LOOPZ;       #through;
         case .LOOP;
             exec_conditional_jump(state, inst);
+
         case;
             assert(false, "EXEC for instruction type '%' is not implemented.\n", inst.type);
     }
