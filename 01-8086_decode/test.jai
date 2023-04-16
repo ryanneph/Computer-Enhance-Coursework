@@ -217,6 +217,19 @@ validate_memory_add_loop :: (state: *Processor_State) -> bool {
     return processor_state_equal(*expected, state);
 }
 
+validate_add_loop_challenge :: (state: *Processor_State) -> bool {
+    expected: Processor_State;
+    expected.ip = 0x0021;
+    store_register(*expected, .BX, 0x0006);
+    store_register(*expected, .DX, 0x0006);
+    store_register(*expected, .BP, 0x03E6);
+
+    flags := Flag.PARITY | .ZERO;
+    store_flags(*expected, flags);
+
+    return processor_state_equal(*expected, state);
+}
+
 run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
     encoded_filename := path_join(TEST_TEMP_DIR, path_basename(asm_filename));
     assemble(asm_filename, encoded_filename);
@@ -306,6 +319,7 @@ init_tests :: () -> []Test {
     add_test("listing_0050_challenge_jumps.asm",         decode_subtest, make_exec_subtest(validate_challenge_jumps));
     add_test("listing_0051_memory_mov.asm",              decode_subtest, make_exec_subtest(validate_memory_mov));
     add_test("listing_0052_memory_add_loop.asm",         decode_subtest, make_exec_subtest(validate_memory_add_loop));
+    add_test("listing_0053_add_loop_challenge.asm",      decode_subtest, make_exec_subtest(validate_add_loop_challenge));
 
     return tests;
 }
