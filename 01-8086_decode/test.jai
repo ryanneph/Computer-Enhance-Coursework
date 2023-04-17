@@ -243,6 +243,15 @@ validate_draw_rectangle :: (state: *Processor_State) -> bool {
     return processor_state_equal(*expected, state);
 }
 
+validate_challenge_rectangle :: (state: *Processor_State) -> bool {
+    expected: Processor_State;
+    expected.ip = 0x0044;
+    store_register(*expected, .BX, 0x4004);
+    store_register(*expected, .BP, 0x02FC);
+
+    return processor_state_equal(*expected, state);
+}
+
 run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
     encoded_filename := path_join(TEST_TEMP_DIR, path_basename(asm_filename));
     assemble(asm_filename, encoded_filename);
@@ -334,6 +343,7 @@ init_tests :: () -> []Test {
     add_test("listing_0052_memory_add_loop.asm",         decode_subtest, make_exec_subtest(validate_memory_add_loop));
     add_test("listing_0053_add_loop_challenge.asm",      decode_subtest, make_exec_subtest(validate_add_loop_challenge));
     add_test("listing_0054_draw_rectangle.asm",          decode_subtest, make_exec_subtest(validate_draw_rectangle));
+    add_test("listing_0055_challenge_rectangle.asm",     decode_subtest, make_exec_subtest(validate_challenge_rectangle));
 
     return tests;
 }
