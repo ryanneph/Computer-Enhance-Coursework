@@ -1603,7 +1603,7 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
         set_flag(*flags, Flag.ZERO,      value == 0);
         set_flag(*flags, Flag.CARRY,     carry);
         set_flag(*flags, Flag.AUX_CARRY, aux_carry);
-        set_flag(*flags, Flag.OVERFLOW,  cast(bool) (~(src ^ dst) & sign_mask) & ((value ^ dst) & sign_mask));
+        set_flag(*flags, Flag.OVERFLOW,  cast(bool) sign_mask & ~(src ^ dst) & (value ^ dst));
 
         // parity (low-order 8-bits have even number of set bits)
         set_count := 0;
