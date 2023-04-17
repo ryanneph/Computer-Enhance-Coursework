@@ -9,13 +9,54 @@ DEBUG_EXEC   := true;
 DEBUG_TEST   := false;
 formatHex :: #bake_arguments formatInt(base=16);
 
-Memory_Region :: []u8;
+Instruction_Cache :: struct {
+    ICacheEntry :: struct {
+        addr: *u8;
+        inst: Instruction;
+    };
 
+    data: [8]ICacheEntry;
+    head: u8;
+    tail: u8;
+}
+
+icache_insert :: (icache: *Instruction_Cache, addr: *u8, inst: Instruction) {
+    icache.head = (icache.head + 1) % icache.data.count;
+    if icache.head == icache.tail {
+        // evict oldest
+        icache.tail = (icache.tail + 1) % icache.data.count;
+    }
+
+    entry := *icache.data[icache.head];
+    entry.addr = addr;
+    entry.inst = inst;
+}
+
+icache_find :: (icache: *Instruction_Cache, addr: *u8) -> (found: bool, Instruction) {
+    i := 0;
+    index: s32 = icache.head;
+    while index != icache.tail {
+        i += 1;
+        entry := *icache.data[index];
+        if entry.addr == addr {
+            // TODO(ryan): promote to most-recent?
+            return true, entry.inst;
+        }
+
+        index -= 1;
+        if index == -1  index = icache.data.count - 1;
+    }
+    return false, .{};
+}
+
+Memory_Region :: []u8;
 Processor_State :: struct {
     register_memory: [26]u8;
     memory: [1024 * 1024]u8;
     ip: s64;
     flags: Flag;
+
+    icache: Instruction_Cache;
 }
 
 Flag :: enum_flags {
@@ -1284,7 +1325,7 @@ decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, segment_override: 
     return flags, segment_override, advance_count;
 }
 
-decode_once :: (head: *u8) -> (Instruction, advance: s32) {
+decode_once_actually :: (head: *u8) -> (Instruction, advance: s32) {
     flags, segment_override, prefix_advance := decode_all_prefix_bytes(head);
     head += prefix_advance;
 
@@ -1308,6 +1349,25 @@ decode_once :: (head: *u8) -> (Instruction, advance: s32) {
     assert(inst.operand_count != .BINARY || inst.src.type != .INVALID, "src operand must be valid if operand_count == .BINARY");
 
     return inst, prefix_advance + advance_count;
+}
+
+decode_once :: (head: *u8, icache: *Instruction_Cache = null) -> (Instruction, advance: s32) {
+    advance: s32;
+    inst: Instruction = ---;
+    found: bool;
+
+    if icache {
+        found, inst = icache_find(icache, head);
+        if found
+            return inst, cast(s32)inst.size;
+    }
+
+    inst, advance = decode_once_actually(head);
+
+    if icache
+        icache_insert(icache, head, inst);
+
+    return inst, advance;
 }
 
 instruction_to_string :: (inst: Instruction) -> string {
@@ -1349,6 +1409,7 @@ disassemble_file :: (filename: string, output_asm_path: string="out.asm") {
     offset := 0;
     while offset < bytes.count {
         head := bytes.data + offset;
+
         inst, advance := decode_once(head);
         offset += advance;
 
@@ -1642,10 +1703,9 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
 execute_from_ip :: (state: *Processor_State, inst_memory: Memory_Region) {
     while state.ip < inst_memory.count {
         head := inst_memory.data + state.ip;
-        inst, advance := decode_once(head);
+        inst, advance := decode_once(head, *state.icache);
 
-        new_ip := state.ip + advance;
-        state.ip = new_ip;
+        state.ip += advance;
 
         exec_instruction(state, inst);
     }
