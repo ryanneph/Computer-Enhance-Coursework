@@ -1566,12 +1566,22 @@ exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
         case .JB_JNAE_JC;  do_jump = xx (flags & .CARRY);
         case .JNP_JPO;     do_jump = !  (flags & .PARITY);
         case .JP_JPE;      do_jump = xx (flags & .PARITY);
+        case .LOOP;  #through;
         case .LOOPZ; #through;
         case .LOOPNZ;
-            // TODO(ryanneph): This must set the zero (and other) flag as needed
             cx := load_register(state, .CX);
             cx -= 1;
-            do_jump = ifx inst.type == .LOOPNZ then cx != 0 else cx == 0;
+            do_jump = cx != 0;
+
+            flags: Flag = ---;
+            if (do_jump && inst.type != .LOOP) {
+                flags = load_flags(state);
+                if inst.type == .LOOPNZ
+                    do_jump = (flags & .ZERO) == 0;
+                else if inst.type == .LOOPZ
+                    do_jump = (flags & .ZERO) != 0;
+            }
+
             store_register(state, .CX, cx);
         case; assert(false, "% is not yet a supported conditional jump type.", inst.type);
     }
