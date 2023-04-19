@@ -1401,11 +1401,10 @@ print_instruction :: (builder: *String_Builder, inst: Instruction) {
     }
 }
 
-disassemble_file :: (filename: string, output_asm_path: string="out.asm") {
+disassemble_file :: (filename: string, output_filename: string = "8086_disassembly.asm") {
     bytes: []u8 = file_read_all_as_bytes(filename);
 
     builder: String_Builder;
-
     offset := 0;
     while offset < bytes.count {
         head := bytes.data + offset;
@@ -1417,9 +1416,8 @@ disassemble_file :: (filename: string, output_asm_path: string="out.asm") {
         append(*builder, "\n");
     }
 
-    file, success := file_open(output_asm_path, for_writing=true, keep_existing_content=false);
-    if !success
-        assert(false);
+    file, opened := file_open(output_filename, for_writing=true, keep_existing_content=false);
+    assert(opened, "Failed to open file '%' for writing disassembly.", output_filename);
 
     file_write(*file, "; auto-generated 8086 disassembly\n");
     file_write(*file, "bits 16\n\n");
@@ -1710,7 +1708,7 @@ execute_from_ip :: (state: *Processor_State, inst_memory: Memory_Region) {
     }
 }
 
-execute_file :: (filename: string) {
+execute_file :: (filename: string, dump_memory: bool = false) {
     inst_memory: Memory_Region = file_read_all_as_bytes(filename);
 
     DEBUG_DECODE = false;
@@ -1719,11 +1717,25 @@ execute_file :: (filename: string) {
 
     print("\n");
     print_processor_state(*state);
+
+    if dump_memory {
+        dump_filename :: "8086_memory_dump.raw";
+        file, opened := file_open(dump_filename, for_writing = true);
+        assert(opened, "Failed to open file for dumping processor memory: '%'", dump_filename);
+        file_write(*file, state.memory.data, state.memory.count);
+        file_close(*file);
+
+        print("Dumped processor memory to '%'\n", dump_filename);
+    }
 }
 
 print_usage :: (args: []string) {
     print(#string ENDUSAGE
-usage:  % <command> [options]
+usage:  % [options] <command> [command args]
+
+options:
+  -dump  dump processor memory after "exec" command
+
 commands:
   decode  decode the file into 8086 assembly
           "decode <file>"
@@ -1740,23 +1752,38 @@ arg_parsing_error :: (args: []string, message: string, exit_code: s32 = 1) {
 }
 
 main :: () {
+    options: struct {
+        dump: bool;
+    };
     args := get_command_line_arguments();
     if args.count <= 1
         arg_parsing_error(args, "not enough arguments provided");
 
-    if args[1] == {
-        case "decode";
-            if (args.count < 3)
-            arg_parsing_error(args, "not enough arguments provided");
-            disassemble_file(args[2]);
-        case "exec";
-            if (args.count < 3)
-            arg_parsing_error(args, "not enough arguments provided");
-            execute_file(args[2]);
-        case "test";
-            run_tests();
-        case;
-            arg_parsing_error(args, tprint("unknown command '%'\n", args[1]));
+    for i: 1..args.count-1 {
+        if args[i] == {
+            // Options (must all be before first recognized "Command")
+            case "-dump";
+                options.dump = true;
+
+            // Commands
+            case "decode";
+                if (i + 1 >= args.count)
+                    arg_parsing_error(args, "not enough arguments provided");
+                disassemble_file(args[i + 1]);
+                break;
+            case "exec";
+                if (i + 1 >= args.count)
+                    arg_parsing_error(args, "not enough arguments provided");
+                execute_file(args[i + 1], dump_memory=options.dump);
+                break;
+            case "test";
+                run_tests();
+                break;
+
+            case;
+                arg_parsing_error(args, tprint("unknown argument '%'\n", args[i]));
+                break;
+        }
     }
 }
 

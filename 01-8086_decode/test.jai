@@ -46,7 +46,7 @@ run_one_decode_test :: (actual_asm_path: string) -> bool {
 
     // run our disassembler
     if DEBUG_TEST  print("Disassembling '%' to '%':\n", temp_encoded_path, temp_our_asm_path);
-    disassemble_file(temp_encoded_path, output_asm_path=temp_our_asm_path);
+    disassemble_file(temp_encoded_path, output_filename=temp_our_asm_path);
 
     // assemble our disassembled asm to machine code
     if DEBUG_TEST  print("Assembling input '%' to '%'\n", temp_our_asm_path, temp_our_encoded_path);
