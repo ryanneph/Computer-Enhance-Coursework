@@ -1427,7 +1427,7 @@ disassemble_file :: (filename: string, output_asm_path: string="out.asm") {
     file_close(*file);
 }
 
-flags_to_string :: (state: Processor_State, allocator: Allocator = temporary_allocator) -> string {
+flags_to_string :: (state: *Processor_State, allocator: Allocator = temporary_allocator) -> string {
     builder: String_Builder;
     builder.allocator = temporary_allocator;
 
@@ -1444,11 +1444,11 @@ flags_to_string :: (state: Processor_State, allocator: Allocator = temporary_all
 
     return builder_to_string(*builder, allocator);
 }
-print_processor_state :: (state: Processor_State) {
+print_processor_state :: (state: *Processor_State) {
     formatInt8  :: #bake_arguments formatInt(minimum_digits=3, padding=#char " ");
     formatInt16 :: #bake_arguments formatInt(minimum_digits=5, padding=#char " ");
     print_register_word :: (reg: Register, low: Register = .INVALID, high: Register = .INVALID) #expand {
-        value: u16 = load_register(*state, reg);
+        value: u16 = load_register(state, reg);
         low_value  : u8 = cast,no_check(u8) value;
         high_value : u8 = cast(u8) (value >> 8);
 
@@ -1509,7 +1509,7 @@ store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
     }
 }
 
-load_register :: (state: Processor_State, register: Register) -> u16 {
+load_register :: (state: *Processor_State, register: Register) -> u16 {
     assert(register != .INVALID, "Invalid register.");
     reg := register_def(register);
     value: u16 = state.register_memory[reg.offset];
@@ -1518,18 +1518,18 @@ load_register :: (state: Processor_State, register: Register) -> u16 {
     return value;
 }
 
-load_flags :: inline (state: Processor_State) -> Flag {
+load_flags :: inline (state: *Processor_State) -> Flag {
     return cast(Flag) load_register(state, .FLAG);
 }
 
-load_operand :: (state: Processor_State, operand: Operand) -> u16 {
+load_operand :: (state: *Processor_State, operand: Operand) -> u16 {
     if operand.type == {
         case .IMMEDIATE;
             return operand.imm.val;
         case .REGISTER;
             return load_register(state, operand.reg);
         case .MEMORY;
-            addr := effective_address(*state, operand.mem);
+            addr := effective_address(state, operand.mem);
             value: u16 = state.memory[addr];
             if operand.mem.word
                 value |= (cast(u16) state.memory[addr + 1]) << 8;
@@ -1718,7 +1718,7 @@ execute_file :: (filename: string) {
     execute_from_ip(*state, inst_memory);
 
     print("\n");
-    print_processor_state(state);
+    print_processor_state(*state);
 }
 
 print_usage :: (args: []string) {
