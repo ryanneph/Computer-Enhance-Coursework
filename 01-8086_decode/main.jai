@@ -1503,19 +1503,18 @@ store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
             store_register(state, operand.reg, value);
         case .MEMORY;
             addr := effective_address(state, operand.mem);
-            if operand.mem.word then
-                <<(cast(*u16)(*state.memory[addr])) = value;
-            else
-                state.memory[addr] = cast(u8) value;
+            state.memory[addr] = cast(u8) (value & 0xFF);
+            if operand.mem.word
+                state.memory[addr + 1] = cast(u8)((value >> 8) & 0xFF);
     }
 }
 
 load_register :: (state: Processor_State, register: Register) -> u16 {
     assert(register != .INVALID, "Invalid register.");
     reg := register_def(register);
-    value: u16 =  state.register_memory[reg.offset];
+    value: u16 = state.register_memory[reg.offset];
     if reg.size >= 2
-        value |= (cast(u16)state.register_memory[reg.offset + 1]) << 8;
+        value |= (cast(u16) state.register_memory[reg.offset + 1]) << 8;
     return value;
 }
 
@@ -1531,10 +1530,10 @@ load_operand :: (state: Processor_State, operand: Operand) -> u16 {
             return load_register(state, operand.reg);
         case .MEMORY;
             addr := effective_address(*state, operand.mem);
+            value: u16 = state.memory[addr];
             if operand.mem.word
-                return <<(cast(*u16) (*state.memory[addr]));
-            else
-                return state.memory[addr];
+                value |= (cast(u16) state.memory[addr + 1]) << 8;
+            return value;
         case;
             assert(false, "operand type % not implemented", operand.type);
     }
