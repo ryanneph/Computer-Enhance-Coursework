@@ -1491,6 +1491,12 @@ store_register :: (state: *Processor_State, register: Register, value: u16) {
         state.register_memory[reg.offset + 1] = cast(u8)((value >> 8) & 0xFF);
 }
 
+store_memory :: (state: *Processor_State, addr: u16, value: u16, word: bool) {
+    state.memory[addr] = cast(u8) (value & 0xFF);
+    if word
+        state.memory[addr + 1] = cast(u8)((value >> 8) & 0xFF);
+}
+
 store_flags :: inline (state: *Processor_State, flags: Flag) {
     store_register(state, .FLAG, cast(u16) flags);
 }
@@ -1501,9 +1507,7 @@ store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
             store_register(state, operand.reg, value);
         case .MEMORY;
             addr := effective_address(state, operand.mem);
-            state.memory[addr] = cast(u8) (value & 0xFF);
-            if operand.mem.word
-                state.memory[addr + 1] = cast(u8)((value >> 8) & 0xFF);
+            store_memory(state, addr, value, operand.mem.word);
     }
 }
 
@@ -1513,6 +1517,13 @@ load_register :: (state: *Processor_State, register: Register) -> u16 {
     value: u16 = state.register_memory[reg.offset];
     if reg.size >= 2
         value |= (cast(u16) state.register_memory[reg.offset + 1]) << 8;
+    return value;
+}
+
+load_memory :: (state: *Processor_State, addr: u16, word: bool) -> u16 {
+    value: u16 = state.memory[addr];
+    if word
+        value |= (cast(u16) state.memory[addr + 1]) << 8;
     return value;
 }
 
@@ -1528,10 +1539,7 @@ load_operand :: (state: *Processor_State, operand: Operand) -> u16 {
             return load_register(state, operand.reg);
         case .MEMORY;
             addr := effective_address(state, operand.mem);
-            value: u16 = state.memory[addr];
-            if operand.mem.word
-                value |= (cast(u16) state.memory[addr + 1]) << 8;
-            return value;
+            return load_memory(state, addr, operand.mem.word);
         case;
             assert(false, "operand type % not implemented", operand.type);
     }
