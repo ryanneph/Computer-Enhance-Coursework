@@ -547,7 +547,7 @@ operand_immediate :: inline (low: u8, high: u8 = 0) -> Operand {
     return Operand.{ type = .IMMEDIATE, imm = Immediate.{ val = immediate(low, high) }};
 }
 operand_increment :: inline (low: u8) -> Operand {
-    return Operand.{ type = .INCREMENT, inc = Increment.{ val = cast(s16)(cast,no_check(s8)low) } };
+    return Operand.{ type = .INCREMENT, inc = Increment.{ val = cast,no_check(s16) sign_extend(low) } };
 }
 operand_increment :: inline (low: u8, high: u8) -> Operand {
     return Operand.{ type = .INCREMENT, inc = Increment.{ val = ((cast,no_check(s16)high) << 8) | cast,no_check(s16)low } };
@@ -835,7 +835,12 @@ decode_call_direct_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: 
     inst.operand_count = .UNARY;
     inst.size = 2 + cast(u32) !field_short;
 
-    inst.dst = operand_increment(<<(head + 1), ifx !field_short then <<(head + 2) else 0);
+    rel: u16;
+    if field_short
+        // automatically sign extends 8 bits to 16 bits
+        inst.dst = operand_increment(<<(head + 1));
+    else
+        inst.dst = operand_increment(<<(head + 1), <<(head + 2));
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, increment=%} (%)\n",
