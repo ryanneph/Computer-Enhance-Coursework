@@ -1,6 +1,13 @@
 #import "Basic";
 #import "Process";
 
+// for reading stdin
+#if OS == .WINDOWS {
+    #import "Windows";
+} else {
+    #import "POSIX";
+}
+
 #load "file.jai";
 #load "test.jai";
 
@@ -1631,12 +1638,14 @@ exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
 
     do_jump: bool;
     if inst.type == {
+        case .JMP;         do_jump = true;
         case .JNE_JNZ;     do_jump = !  (flags & .ZERO);
         case .JE_JZ;       do_jump = xx (flags & .ZERO);
         case .JNB_JAE_JNC; do_jump = !  (flags & .CARRY);
         case .JB_JNAE_JC;  do_jump = xx (flags & .CARRY);
         case .JNP_JPO;     do_jump = !  (flags & .PARITY);
         case .JP_JPE;      do_jump = xx (flags & .PARITY);
+
         case .LOOP;  #through;
         case .LOOPZ; #through;
         case .LOOPNZ;
@@ -1654,6 +1663,7 @@ exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
             }
 
             store_register(state, .CX, cx);
+
         case; assert(false, "% is not yet a supported conditional jump type.", inst.type);
     }
 
@@ -1669,6 +1679,62 @@ exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
     if DEBUG_EXEC {
         print("% ; ip:0x%->0x%\n", instruction_to_string(inst), formatHex(original_ip), formatHex(state.ip));
     }
+}
+get_stdin_line :: () -> string {
+    BUFFER_SIZE :: 1024;
+    buffer: [BUFFER_SIZE] u8;
+    input: string;
+    input.data = buffer.data;
+
+    while true {
+        #if OS == .WINDOWS {
+            handle := GetStdHandle(STD_INPUT_HANDLE);
+            bytes_read: u32;
+            success := ReadFile(handle, buffer.data + input.count, cast(u32) (buffer.count - input.count), *bytes_read, null);
+        } else {
+            bytes_read := read(STDIN_FILENO, buffer.data + input.count, cast(u64) (buffer.count - input.count));
+            if bytes_read < 0 {
+                log_error("Couldn't read from stdin");
+                exit(1);
+            }
+        }
+
+        if bytes_read {
+            for i: 0..bytes_read-1 {
+                c := input.data[input.count + i];
+                if c == #char "\n"
+                    break;
+            }
+
+            input.count += bytes_read;
+            break;
+        }
+    }
+
+    return copy_temporary_string(trim_right(input, "\n\r"));
+}
+exec_interrupt :: (state: *Processor_State, inst: Instruction) {
+    interrupt := inst.dst.imm.val;
+    if DEBUG_EXEC  print(">>> BEGIN INTERRUPT %\n", interrupt);
+
+    if interrupt == {
+        case 1;
+            print("Waiting for user input: ");
+            user_input := get_stdin_line();
+            value, success := to_integer(user_input);
+
+            if success {
+                dest_addr := load_register(state, .DX);
+                store_memory(state, dest_addr, cast,no_check(u16) value, word = true);
+            } else {
+                print("Failed to convert user input '%' to integer\n", user_input);
+            }
+
+        case;
+            print("Unhandled interrupt %\n", interrupt);
+    }
+
+    if DEBUG_EXEC  print("<<< END INTERRUPT %\n", interrupt);
 }
 exec_instruction :: (state: *Processor_State, inst: Instruction) {
     if inst.type == {
@@ -1704,6 +1770,11 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
         case .LOOPZ;       #through;
         case .LOOP;
             exec_conditional_jump(state, inst);
+
+        case .INT; #through;
+        case .INT3; #through;
+        case .INTO;
+            exec_interrupt(state, inst);
 
         case;
             assert(false, "EXEC for instruction type '%' is not implemented.\n", inst.type);
