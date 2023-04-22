@@ -256,10 +256,10 @@ run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
     encoded_filename := path_join(TEST_TEMP_DIR, path_basename(asm_filename));
     assemble(asm_filename, encoded_filename);
 
-    inst_memory: Memory_Region = file_read_all_as_bytes(encoded_filename);
-
     state: Processor_State;
-    execute_from_ip(*state, inst_memory);
+    program := file_read_all_as_bytes(encoded_filename);
+    load_program_into_memory(*state, program);
+    execute_from_ip(*state);
 
     return payload.validate_proc(*state);
 }

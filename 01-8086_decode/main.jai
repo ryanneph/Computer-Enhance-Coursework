@@ -56,7 +56,6 @@ icache_find :: (icache: *Instruction_Cache, addr: *u8) -> (found: bool, Instruct
     return false, .{};
 }
 
-Memory_Region :: []u8;
 Processor_State :: struct {
     register_memory: [26]u8;
     memory: [1024 * 1024]u8;
@@ -1781,23 +1780,37 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
     }
 }
 
-execute_from_ip :: (state: *Processor_State, inst_memory: Memory_Region) {
-    while state.ip < inst_memory.count {
-        head := inst_memory.data + state.ip;
+execute_from_ip :: (state: *Processor_State) {
+    while true {
+        head := state.memory.data + state.ip;
         inst, advance := decode_once(head, *state.icache);
 
-        state.ip += advance;
+        if inst.type == .HLT  break;
 
+        state.ip += advance;
         exec_instruction(state, inst);
     }
 }
 
-execute_file :: (filename: string, dump_memory: bool = false) {
-    inst_memory: Memory_Region = file_read_all_as_bytes(filename);
+load_program_into_memory :: (state: *Processor_State, program: []u8, offset: u16 = 0) {
+    memcpy(state.memory.data, program.data, program.count);
 
+    // add a trailing HLT instruction to signal the processor when to stop
+    state.memory[program.count] = 0xF4;
+
+    state.ip = offset;
+}
+
+execute_file :: (filename: string, dump_memory: bool = false) {
     DEBUG_DECODE = false;
     state: Processor_State;
-    execute_from_ip(*state, inst_memory);
+
+    // load program memory into processor memory at byte 0.
+    // Hopefully the program developer knows about this!!
+    program := file_read_all_as_bytes(filename);
+    load_program_into_memory(*state, program);
+
+    execute_from_ip(*state);
 
     print("\n");
     print_processor_state(*state);
