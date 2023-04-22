@@ -1729,6 +1729,23 @@ exec_interrupt :: (state: *Processor_State, inst: Instruction) {
                 print("Failed to convert user input '%' to integer\n", user_input);
             }
 
+        case 2;
+            strlen :: (addr: *u8) -> s64 {
+                len := 0;
+                while true {
+                    if <<(addr + len) == 0x0  break;
+                    len += 1;
+                }
+                return len;
+            }
+            prefix_addr := state.memory.data + load_register(state, .CX);
+            prefix: string;
+            prefix.data = prefix_addr;
+            prefix.count = strlen(prefix_addr);
+
+            user_value := load_register(state, .DX);
+            print("%0%\n", prefix, user_value);
+
         case;
             print("Unhandled interrupt %\n", interrupt);
     }
