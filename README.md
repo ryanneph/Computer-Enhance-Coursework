@@ -1,6 +1,6 @@
 Personal work produced while following Casey Muratori's ["Computer Enhance" course](https://www.computerenhance.com/).
 
-Source code is primarily (if not completely) written using `Version: beta 0.1.047, built on 27 November 2022`
+Source code is primarily (if not completely) written using `Version: beta 0.1.060, built on 08 April 2023`
 of Jonathan Blow's "jai" programming language on a modern Linux-based operating system. Access to the "jai"
 compiler is currently (as of this writing) restricted to closed beta participants only. I will provide
 best-effort to ensure the code remains as portable as possible, but support will not be guaranteed.
