@@ -1381,7 +1381,7 @@ decode_once :: (head: *u8, icache: *Instruction_Cache = null) -> (Instruction, a
     return inst, advance;
 }
 
-instruction_to_string :: (inst: Instruction) -> string {
+instruction_to_string :: (inst: *Instruction) -> string {
     builder: String_Builder;
     builder.allocator = temporary_allocator;
 
@@ -1389,7 +1389,7 @@ instruction_to_string :: (inst: Instruction) -> string {
     return builder_to_string(*builder);
 }
 
-print_instruction :: (builder: *String_Builder, inst: Instruction) {
+print_instruction :: (builder: *String_Builder, inst: *Instruction) {
     if inst.flags & .REPEAT_NOTZERO
         append(builder, "repnz ");
     else if inst.flags & .REPEAT_ZERO
@@ -1423,7 +1423,7 @@ disassemble_file :: (filename: string, output_filename: string = "8086_disassemb
         inst, advance := decode_once(head);
         offset += advance;
 
-        print_instruction(*builder, inst);
+        print_instruction(*builder, *inst);
         append(*builder, "\n");
     }
 
@@ -1571,7 +1571,7 @@ exec_mov :: (state: *Processor_State, inst: Instruction) {
     store_operand(state, inst.dst, value);
 
     if DEBUG_EXEC {
-        print("% ; %:0x%->0x%\n", instruction_to_string(inst), operand_to_string(inst, inst.dst),
+        print("% ; %:0x%->0x%\n", instruction_to_string(*inst), operand_to_string(inst, inst.dst),
         formatHex(original), formatHex(value));
     }
 }
@@ -1629,7 +1629,7 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
     store_register(state, .FLAG, flags);
 
     if DEBUG_EXEC
-        print("% ; %:0x%->0x% flags:%->%\n", instruction_to_string(inst), operand_to_string(inst, inst.dst),
+        print("% ; %:0x%->0x% flags:%->%\n", instruction_to_string(*inst), operand_to_string(inst, inst.dst),
             formatHex(dst), formatHex(value), original_flags, flags_to_string(state));
 }
 exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
@@ -1676,7 +1676,7 @@ exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
     if do_jump  state.ip += rel;
 
     if DEBUG_EXEC {
-        print("% ; ip:0x%->0x%\n", instruction_to_string(inst), formatHex(original_ip), formatHex(state.ip));
+        print("% ; ip:0x%->0x%\n", instruction_to_string(*inst), formatHex(original_ip), formatHex(state.ip));
     }
 }
 get_stdin_line :: () -> string {
