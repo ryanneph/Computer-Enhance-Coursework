@@ -66,6 +66,7 @@ Processor_State :: struct {
 
     perf: struct {
         total_cycles: s64;
+        unhandled_inst_count: s64;
     };
 }
 
@@ -1934,6 +1935,10 @@ estimate_perf_for_instruction :: (state: *Processor_State, inst: *Instruction) -
 
         case .MOV;
             cycles = estimate_perf_mov(inst);
+
+        case;
+            // notify caller that instruction was unhandled (negative return value)
+            cycles = -9999;
     }
 
     return cycles;
@@ -1952,9 +1957,18 @@ execute_from_ip :: (state: *Processor_State, estimate_perf: bool = false) {
         if estimate_perf {
             // TODO(ryan): print components of estimate (base + ea + penalties)
             cycles := estimate_perf_for_instruction(state, *inst);
+            if cycles < 0 {
+                cycles = 0;
+                state.perf.unhandled_inst_count += 1;
+            }
+
             state.perf.total_cycles += cycles;
-            if DEBUG_EXEC
-                print(" Cycles: +% = % |", cycles, state.perf.total_cycles);
+            if DEBUG_EXEC {
+                print(" Cycles: +");
+                if cycles > 0  print("%", cycles);
+                else           print("?", cycles);
+                print(" = % |", state.perf.total_cycles);
+            }
         }
 
         store_ip(state, cast(u16)(state.ip + advance));
@@ -1987,7 +2001,10 @@ execute_file :: (filename: string, dump_memory: bool = false, estimate_perf: boo
 
     print("\n");
     print_processor_state(*state);
-    print("Total Cycles: %\n", state.perf.total_cycles);
+    print("Total Cycles: %", state.perf.total_cycles);
+    if state.perf.unhandled_inst_count > 0
+        print(" (warning: inaccurate; % unhandled instructions during perf estimation)", state.perf.unhandled_inst_count);
+    print("\n");
 
     if dump_memory {
         dump_filename :: "8086_memory_dump.raw";
