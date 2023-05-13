@@ -64,6 +64,7 @@ Processor_State :: struct {
 
     icache: Instruction_Cache;
 
+    debug_builder: String_Builder;
     perf: struct {
         total_cycles: s64;
     };
@@ -1475,11 +1476,12 @@ print_processor_state :: (state: *Processor_State) {
         low_value  : u8 = cast,no_check(u8) value;
         high_value : u8 = cast(u8) (value >> 8);
 
-        print("    %: 0x% (%) [low=%, high=%]\n", register_def(reg).name, formatHex(value, minimum_digits=4),
+        print_to_builder(*state.debug_builder, "    %: 0x% (%) [low=%, high=%]\n",
+            register_def(reg).name, formatHex(value, minimum_digits=4),
             formatInt16(value), formatInt8(low_value), formatInt8(high_value));
     }
 
-    print("Processor State\n");
+    print_to_builder(*state.debug_builder, "Processor State\n");
     print_register_word(.AX);
     print_register_word(.BX);
     print_register_word(.CX);
@@ -1490,8 +1492,8 @@ print_processor_state :: (state: *Processor_State) {
     print_register_word(.SI);
     print_register_word(.DI);
 
-    print("    ip: 0x% (%)\n", formatHex(state.ip, minimum_digits=4), formatInt16(state.ip));
-    print("    flags: %\n", flags_to_string(state));
+    print_to_builder(*state.debug_builder, "    ip: 0x% (%)\n", formatHex(state.ip, minimum_digits=4), formatInt16(state.ip));
+    print_to_builder(*state.debug_builder, "    flags: %\n", flags_to_string(state));
 }
 
 effective_address :: (state: *Processor_State, mem: Memory) -> u16 {
@@ -1956,9 +1958,9 @@ execute_file :: (filename: string, dump_memory: bool = false, estimate_perf: boo
 
     execute_from_ip(*state, estimate_perf);
 
-    print("\n");
+    append(*state.debug_builder, "\n");
     print_processor_state(*state);
-    print("Total Cycles: %\n", state.perf.total_cycles);
+    print_to_builder(*state.debug_builder, "Total Cycles: %\n", state.perf.total_cycles);
 
     if dump_memory {
         dump_filename :: "8086_memory_dump.raw";
