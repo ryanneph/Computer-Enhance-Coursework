@@ -297,6 +297,31 @@ validate_challenge_cycles :: (state: *Processor_State) -> bool {
     return processor_state_equal(*expected, state) && state.perf.total_cycles == 289;
 }
 
+validate_SingleScalar :: (state: *Processor_State) -> bool {
+    print("NOT IMPLEMENTED\n");
+    return false;
+}
+
+validate_Unroll2Scalar :: (state: *Processor_State) -> bool {
+    print("NOT IMPLEMENTED\n");
+    return false;
+}
+
+validate_DualScalar :: (state: *Processor_State) -> bool {
+    print("NOT IMPLEMENTED\n");
+    return false;
+}
+
+validate_QuadScalarPtr :: (state: *Processor_State) -> bool {
+    print("NOT IMPLEMENTED\n");
+    return false;
+}
+
+validate_TreeScalarPtr :: (state: *Processor_State) -> bool {
+    print("NOT IMPLEMENTED\n");
+    return false;
+}
+
 run_one_exec_test :: (asm_filename: string, payload: Execute_Payload) -> bool {
     encoded_filename := path_join(TEST_TEMP_DIR, path_basename(asm_filename));
     assemble(asm_filename, encoded_filename);
@@ -370,12 +395,16 @@ init_tests :: () -> []Test {
     decode_subtest :: Subtest.{ type = .DECODE };
 
     tests: [..]Test;
+
+    // decode tests
     add_test("listing_0037_single_register_mov.asm",     decode_subtest);
     add_test("listing_0038_many_register_mov.asm",       decode_subtest);
     add_test("listing_0039_more_movs.asm",               decode_subtest);
     add_test("listing_0040_challenge_movs.asm",          decode_subtest);
     add_test("listing_0041_add_sub_cmp_jnz.asm",         decode_subtest);
     add_test("listing_0042_completionist_decode.asm",    decode_subtest);
+
+    // exec tests
     add_test("listing_0043_immediate_movs.asm",          decode_subtest, make_exec_subtest(validate_immediate_movs));
     add_test("listing_0044_register_movs.asm",           decode_subtest, make_exec_subtest(validate_register_movs));
     add_test("listing_0045_challenge_register_movs.asm", decode_subtest, make_exec_subtest(validate_challenge_register_movs));
@@ -388,9 +417,18 @@ init_tests :: () -> []Test {
     add_test("listing_0052_memory_add_loop.asm",         decode_subtest, make_exec_subtest(validate_memory_add_loop));
     add_test("listing_0053_add_loop_challenge.asm",      decode_subtest, make_exec_subtest(validate_add_loop_challenge));
     add_test("listing_0054_draw_rectangle.asm",          decode_subtest, make_exec_subtest(validate_draw_rectangle));
+
+    // perf estimation tests
     add_test("listing_0055_challenge_rectangle.asm",     decode_subtest, make_exec_subtest(validate_challenge_rectangle));
     add_test("listing_0056_estimating_cycles.asm",       decode_subtest, make_exec_subtest(validate_estimating_cycles));
     add_test("listing_0057_challenge_cycles.asm",        decode_subtest, make_exec_subtest(validate_challenge_cycles));
+
+    // prologue tests
+    add_test("listing_0059_SingleScalar.asm",            decode_subtest, make_exec_subtest(validate_SingleScalar));
+    add_test("listing_0060_Unroll2Scalar.asm",           decode_subtest, make_exec_subtest(validate_Unroll2Scalar));
+    add_test("listing_0061_DualScalar.asm",              decode_subtest, make_exec_subtest(validate_DualScalar));
+    add_test("listing_0063_QuadScalarPtr.asm",           decode_subtest, make_exec_subtest(validate_QuadScalarPtr));
+    add_test("listing_0064_TreeScalarPtr.asm",           decode_subtest, make_exec_subtest(validate_TreeScalarPtr));
 
     return tests;
 }
