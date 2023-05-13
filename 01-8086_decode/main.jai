@@ -1830,7 +1830,7 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
     }
 }
 
-estimate_perf_effective_addr :: (memory: Memory, segment_override: Register) -> s32 {
+estimate_perf_effective_addr :: (state: *Processor_State, memory: Memory, segment_override: Register, transfer_count: s32 = 1) -> s32 {
     cycles: s32 = 0;
     if #complete memory.mode == {
         case .DIRECT;
@@ -1864,6 +1864,10 @@ estimate_perf_effective_addr :: (memory: Memory, segment_override: Register) -> 
     if segment_override != .INVALID
         cycles += 2;
 
+    // unaligned access penalty (for 8086 - if address is odd: transfer_count * 4)
+    if effective_address(state, memory) & 0x1
+        cycles += transfer_count * 4;
+
     return cycles;
 }
 
@@ -1881,24 +1885,24 @@ OP_TYPES :: (dst_type: Operand_Type, src_type: Operand_Type) -> bool #expand {
            (`inst.src.type == src_type || (src_type == .ACCUMULATOR && is_accumulator(`inst.src)) || (src_type == .SEGMENT && is_segment(`inst.src)));
 }
 
-estimate_perf_add :: (inst: *Instruction) -> s32 {
+estimate_perf_add :: (state: *Processor_State, inst: *Instruction) -> s32 {
     if OP_TYPES(.REGISTER, .REGISTER) {
         return 3;
     } else if OP_TYPES(.REGISTER, .MEMORY) {
-        return 9 + estimate_perf_effective_addr(inst.src.mem, inst.segment_override);
+        return 9 + estimate_perf_effective_addr(state, inst.src.mem, inst.segment_override);
     } else if OP_TYPES(.MEMORY, .REGISTER) {
-        return 16 + estimate_perf_effective_addr(inst.dst.mem, inst.segment_override);
+        return 16 + estimate_perf_effective_addr(state, inst.dst.mem, inst.segment_override, 2);
     } else if OP_TYPES(.REGISTER, .IMMEDIATE) {
         return 4;
     } else if OP_TYPES(.MEMORY, .IMMEDIATE) {
-        return 17 + estimate_perf_effective_addr(inst.dst.mem, inst.segment_override);
+        return 17 + estimate_perf_effective_addr(state, inst.dst.mem, inst.segment_override, 2);
     } else if OP_TYPES(.ACCUMULATOR, .IMMEDIATE) {
         return 4;
     }
     assert(false, "unhandled instruction: %", inst);
     return -9999;
 }
-estimate_perf_mov :: (inst: *Instruction) -> s32 {
+estimate_perf_mov :: (state: *Processor_State, inst: *Instruction) -> s32 {
     if OP_TYPES(.MEMORY, .ACCUMULATOR) {
         return 10;
     } else if OP_TYPES(.ACCUMULATOR, .MEMORY) {
@@ -1906,21 +1910,21 @@ estimate_perf_mov :: (inst: *Instruction) -> s32 {
     } else if OP_TYPES(.REGISTER, .REGISTER) {
         return 2;
     } else if OP_TYPES(.REGISTER, .MEMORY) {
-        return 8 + estimate_perf_effective_addr(*inst.src.mem, inst.segment_override);
+        return 8 + estimate_perf_effective_addr(state, *inst.src.mem, inst.segment_override);
     } else if OP_TYPES(.MEMORY, .REGISTER) {
-        return 9 + estimate_perf_effective_addr(*inst.dst.mem, inst.segment_override);
+        return 9 + estimate_perf_effective_addr(state, *inst.dst.mem, inst.segment_override);
     } else if OP_TYPES(.REGISTER, .IMMEDIATE) {
         return 4;
     } else if OP_TYPES(.MEMORY, .IMMEDIATE) {
-        return 10 + estimate_perf_effective_addr(*inst.dst.mem, inst.segment_override);
+        return 10 + estimate_perf_effective_addr(state, *inst.dst.mem, inst.segment_override);
     } else if OP_TYPES(.SEGMENT, .REGISTER) {
         return 2;
     } else if OP_TYPES(.SEGMENT, .MEMORY) {
-        return 8 + estimate_perf_effective_addr(*inst.src.mem, inst.segment_override);
+        return 8 + estimate_perf_effective_addr(state, *inst.src.mem, inst.segment_override);
     } else if OP_TYPES(.REGISTER, .SEGMENT) {
         return 2;
     } else if OP_TYPES(.MEMORY, .SEGMENT) {
-        return 9 + estimate_perf_effective_addr(*inst.dst.mem, inst.segment_override);
+        return 9 + estimate_perf_effective_addr(state, *inst.dst.mem, inst.segment_override);
     }
     assert(false, "unhandled instruction: %", inst);
     return -9999;
@@ -1931,10 +1935,10 @@ estimate_perf_for_instruction :: (state: *Processor_State, inst: *Instruction) -
     if inst.type == {
         case .ADC; #through;
         case .ADD;
-            cycles = estimate_perf_add(inst);
+            cycles = estimate_perf_add(state, inst);
 
         case .MOV;
-            cycles = estimate_perf_mov(inst);
+            cycles = estimate_perf_mov(state, inst);
 
         case;
             // notify caller that instruction was unhandled (negative return value)
