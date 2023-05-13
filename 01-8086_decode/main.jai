@@ -63,6 +63,10 @@ Processor_State :: struct {
     flags: Flag;
 
     icache: Instruction_Cache;
+
+    perf: struct {
+        total_cycles: s64;
+    };
 }
 
 Flag :: enum_flags {
@@ -1807,52 +1811,6 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
     }
 }
 
-execute_from_ip :: (state: *Processor_State) {
-    while true {
-        head := state.memory.data + state.ip;
-        inst, advance := decode_once(head, *state.icache);
-
-        if inst.type == .HLT  break;
-
-        state.ip += advance;
-        exec_instruction(state, inst);
-    }
-}
-
-load_program_into_memory :: (state: *Processor_State, program: []u8, offset: u16 = 0) {
-    memcpy(state.memory.data, program.data, program.count);
-
-    // add a trailing HLT instruction to signal the processor when to stop
-    state.memory[program.count] = 0xF4;
-
-    state.ip = offset;
-}
-
-execute_file :: (filename: string, dump_memory: bool = false) {
-    DEBUG_DECODE = false;
-    state: Processor_State;
-
-    // load program memory into processor memory at byte 0.
-    // Hopefully the program developer knows about this!!
-    program := file_read_all_as_bytes(filename);
-    load_program_into_memory(*state, program);
-
-    execute_from_ip(*state);
-
-    print("\n");
-    print_processor_state(*state);
-
-    if dump_memory {
-        dump_filename :: "8086_memory_dump.raw";
-        file, opened := file_open(dump_filename, for_writing = true);
-        assert(opened, "Failed to open file for dumping processor memory: '%'", dump_filename);
-        file_write(*file, state.memory.data, state.memory.count);
-        file_close(*file);
-
-        print("Dumped processor memory to '%'\n", dump_filename);
-    }
-}
-
 estimate_perf_effective_addr :: (memory: Memory, segment_override: Register) -> s32 {
     cycles: s32 = 0;
     if #complete memory.mode == {
@@ -1889,6 +1847,7 @@ estimate_perf_effective_addr :: (memory: Memory, segment_override: Register) -> 
 
     return cycles;
 }
+
 OP_TYPES :: (dst_type: Operand_Type, src_type: Operand_Type) -> bool #expand {
     is_accumulator :: (operand: Operand)-> bool #expand {
         return operand.type == .REGISTER &&
@@ -1948,46 +1907,70 @@ estimate_perf_mov :: (inst: *Instruction) -> s32 {
     return -9999;
 }
 
-estimate_perf_for_file :: (filename: string, output_filename: string = "8086_perf_estimate.asm") {
-    bytes: []u8 = file_read_all_as_bytes(filename);
-    total_cycles := 0;
+estimate_perf_for_instruction :: (state: *Processor_State, inst: *Instruction) -> s32 {
+    cycles: s32 = 0;
+    if inst.type == {
+        case .ADC; #through;
+        case .ADD;
+            cycles = estimate_perf_add(inst);
 
-    DEBUG_DECODE = false;
-
-    builder: String_Builder;
-    offset := 0;
-    while offset < bytes.count {
-        head := bytes.data + offset;
-
-        inst, advance := decode_once(head);
-        offset += advance;
-
-        cycles: s32 = 0;
-        if inst.type == {
-            case .ADC; #through;
-            case .ADD;
-                cycles = estimate_perf_add(*inst);
-
-            case .MOV;
-                cycles = estimate_perf_mov(*inst);
-        }
-
-        assert(cycles > 0, "Unhandled instruction:\n'%'", inst);
-        total_cycles += cycles;
-
-        line := tprint("% | Cycles: +% = %\n", instruction_to_string(*inst), cycles, total_cycles);
-        print("%", line);
-        print_to_builder(*builder, "%", line);
+        case .MOV;
+            cycles = estimate_perf_mov(inst);
     }
 
-    file, opened := file_open(output_filename, for_writing=true, keep_existing_content=false);
-    assert(opened, "Failed to open file '%' for writing disassembly.", output_filename);
-
-    file_write(*file, "; auto-generated 8086 disassembly\n");
-    file_write(*file, "bits 16\n\n");
-    file_write(*file, *builder);
-    file_close(*file);
+    return cycles;
 }
+
+execute_from_ip :: (state: *Processor_State, estimate_perf: bool = false) {
+    while true {
+        head := state.memory.data + state.ip;
+        inst, advance := decode_once(head, *state.icache);
+
+        if inst.type == .HLT  break;
+
+        if estimate_perf
+            state.perf.total_cycles += estimate_perf_for_instruction(state, *inst);
+
+        state.ip += advance;
+        exec_instruction(state, inst);
+    }
+}
+
+load_program_into_memory :: (state: *Processor_State, program: []u8, offset: u16 = 0) {
+    memcpy(state.memory.data, program.data, program.count);
+
+    // add a trailing HLT instruction to signal the processor when to stop
+    state.memory[program.count] = 0xF4;
+
+    state.ip = offset;
+}
+
+execute_file :: (filename: string, dump_memory: bool = false, estimate_perf: bool = false) {
+    DEBUG_DECODE = false;
+    state: Processor_State;
+
+    // load program memory into processor memory at byte 0.
+    // Hopefully the program developer knows about this!!
+    program := file_read_all_as_bytes(filename);
+    load_program_into_memory(*state, program);
+
+    execute_from_ip(*state, estimate_perf);
+
+    print("\n");
+    print_processor_state(*state);
+    print("Total Cycles: %\n", state.perf.total_cycles);
+
+    if dump_memory {
+        dump_filename :: "8086_memory_dump.raw";
+        file, opened := file_open(dump_filename, for_writing = true);
+        assert(opened, "Failed to open file for dumping processor memory: '%'", dump_filename);
+        file_write(*file, state.memory.data, state.memory.count);
+        file_close(*file);
+
+        print("Dumped processor memory to '%'\n", dump_filename);
+    }
+}
+
 
 print_usage :: (args: []string) {
     print(#string ENDUSAGE
@@ -1995,14 +1978,13 @@ usage:  % [options] <command> [command args]
 
 options:
   -dump  dump processor memory after "exec" command
+  -perf  estimate performance during "exec" command
 
 commands:
   decode  decode the file into 8086 assembly
           "decode <file>"
   exec    execute the 8086 assembled binary file
           "exec <file>"
-  perf    estimate performance of each instruction
-          "perf <file>"
   test    run all known tests
 ENDUSAGE, args[0]);
 }
@@ -2016,6 +1998,7 @@ arg_parsing_error :: (args: []string, message: string, exit_code: s32 = 1) {
 main :: () {
     options: struct {
         dump: bool;
+        perf: bool;
     };
     args := get_command_line_arguments();
     if args.count <= 1
@@ -2031,6 +2014,8 @@ main :: () {
             // Options (must all be before first recognized "Command")
             case "-dump";
                 options.dump = true;
+            case "-perf";
+                options.perf = true;
 
             // Commands
             case "decode";
@@ -2039,11 +2024,7 @@ main :: () {
                 break;
             case "exec";
                 check_arg_count(1);
-                execute_file(args[i + 1], dump_memory=options.dump);
-                break;
-            case "perf";
-                check_arg_count(1);
-                estimate_perf_for_file(args[i + 1]);
+                execute_file(args[i + 1], dump_memory=options.dump, estimate_perf=options.perf);
                 break;
             case "test";
                 run_tests();
