@@ -1594,8 +1594,8 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
     src: u32 = cast(u32) load_operand(state, inst.src);
 
     // TODO(ryan): only supports 16-bit ops
-    assert((inst.dst.type == .REGISTER && register_def(inst.dst.reg).size == 2) ||
-        (inst.src.type == .REGISTER && register_def(inst.src.reg).size == 2));
+    assert((inst.dst.type != .REGISTER || register_def(inst.dst.reg).size == 2) &&
+           (inst.src.type != .REGISTER || register_def(inst.src.reg).size == 2));
     operand_mask := 0xFFFF;
     sign_mask    := 0x8000;
 
