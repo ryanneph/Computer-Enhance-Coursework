@@ -567,12 +567,15 @@ operand_increment :: inline (low: u8, high: u8) -> Operand {
     return Operand.{ type = .INCREMENT, inc = Increment.{ val = ((cast,no_check(s16)high) << 8) | cast,no_check(s16)low } };
 }
 
+register_to_string :: inline (register: Register) -> string {
+    return register_def(register).name;
+}
 operand_to_string :: (inst: Instruction, operand: Operand) -> string {
     assert(operand.type != .INVALID, "cannot convert invalid operand to string");
 
     if #complete operand.type == {
         case .REGISTER;
-            return register_def(operand.reg).name;
+            return register_to_string(operand.reg);
         case .INCREMENT;
             builder: String_Builder;
             builder.allocator = temporary_allocator;
@@ -1510,20 +1513,55 @@ effective_address :: (state: *Processor_State, mem: Memory) -> u16 {
 }
 
 store_register :: (state: *Processor_State, register: Register, value: u16) {
+    original: u16;
+    original_flags: string;
+    if DEBUG_EXEC {
+        if register != .FLAG
+            original = load_register(state, register);
+        else
+            original_flags = flags_to_string(state);
+    }
+
     reg := register_def(register);
     state.register_memory[reg.offset] = cast(u8)(value & 0xFF);
     if reg.size >= 2
         state.register_memory[reg.offset + 1] = cast(u8)((value >> 8) & 0xFF);
+
+    if DEBUG_EXEC {
+        if register != .FLAG
+            print(" %:0x%->0x%", register_to_string(register), formatHex(original), formatHex(value));
+        else
+            print(" flags:%->%", original_flags, flags_to_string(state));
+    }
 }
 
 store_memory :: (state: *Processor_State, addr: u16, value: u16, word: bool) {
+    original: u16;
+    if DEBUG_EXEC
+        original = load_memory(state, addr, word);
+
     state.memory[addr] = cast(u8) (value & 0xFF);
     if word
         state.memory[addr + 1] = cast(u8)((value >> 8) & 0xFF);
+
+    if DEBUG_EXEC
+        print(" [0x%]:0x%->0x%", formatHex(addr), formatHex(original), formatHex(value));
 }
 
 store_flags :: inline (state: *Processor_State, flags: Flag) {
     store_register(state, .FLAG, cast(u16) flags);
+}
+
+store_ip :: inline (state: *Processor_State, value: u16) {
+    original_ip: s64;
+    if DEBUG_EXEC
+        original_ip = state.ip;
+
+    state.ip = value;
+
+    if DEBUG_EXEC {
+        print(" ip:0x%->0x%", formatHex(original_ip), formatHex(state.ip));
+    }
 }
 
 store_operand :: (state: *Processor_State, operand: Operand, value: u16) {
@@ -1577,22 +1615,11 @@ set_flag :: (flags: *u16, flag: Flag, value: bool) {
 }
 
 exec_mov :: (state: *Processor_State, inst: Instruction) {
-    original: u16;
-    if DEBUG_EXEC
-        original = load_operand(state, inst.dst);
-
     value := load_operand(state, inst.src);
     store_operand(state, inst.dst, value);
-
-    if DEBUG_EXEC {
-        print("% ; %:0x%->0x%\n", instruction_to_string(*inst), operand_to_string(inst, inst.dst),
-        formatHex(original), formatHex(value));
-    }
 }
 exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
-    original_flags: string;
-    if DEBUG_EXEC
-        original_flags = flags_to_string(state);
+    original_flags: u16 = load_register(state, .FLAG);
 
     dst: u32 = cast(u32) load_operand(state, inst.dst);
     src: u32 = cast(u32) load_operand(state, inst.src);
@@ -1627,7 +1654,7 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
         store_operand(state, inst.dst, value);
 
     // load, overwrite some flags, and store
-    flags: u16 = load_register(state, .FLAG);
+    flags: u16 = original_flags;
     {
         set_flag(*flags, Flag.SIGN,      cast(bool) value & sign_mask);
         set_flag(*flags, Flag.ZERO,      value == 0);
@@ -1640,11 +1667,9 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
         for 0..7  set_count += cast(s64) cast(bool) (value & (1 << it));
         set_flag(*flags, Flag.PARITY, set_count % 2 == 0);
     }
-    store_register(state, .FLAG, flags);
 
-    if DEBUG_EXEC
-        print("% ; %:0x%->0x% flags:%->%\n", instruction_to_string(*inst), operand_to_string(inst, inst.dst),
-            formatHex(dst), formatHex(value), original_flags, flags_to_string(state));
+    if (flags != original_flags)
+        store_register(state, .FLAG, flags);
 }
 exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
     flags := load_flags(state);
@@ -1683,15 +1708,8 @@ exec_conditional_jump :: (state: *Processor_State, inst: Instruction) {
     assert(inst.dst.type == .INCREMENT, "Expected relative offset (increment) operand");
     rel := inst.dst.inc.val;
 
-    original_ip: s64;
-    if DEBUG_EXEC
-        original_ip = state.ip;
-
-    if do_jump  state.ip += rel;
-
-    if DEBUG_EXEC {
-        print("% ; ip:0x%->0x%\n", instruction_to_string(*inst), formatHex(original_ip), formatHex(state.ip));
-    }
+    if do_jump
+        store_ip(state, cast(u16)(state.ip + rel));
 }
 get_stdin_line :: () -> string {
     BUFFER_SIZE :: 1024;
@@ -1928,11 +1946,22 @@ execute_from_ip :: (state: *Processor_State, estimate_perf: bool = false) {
 
         if inst.type == .HLT  break;
 
-        if estimate_perf
-            state.perf.total_cycles += estimate_perf_for_instruction(state, *inst);
+        if DEBUG_EXEC
+            print("% ;", instruction_to_string(*inst));
 
-        state.ip += advance;
+        if estimate_perf {
+            // TODO(ryan): print components of estimate (base + ea + penalties)
+            cycles := estimate_perf_for_instruction(state, *inst);
+            state.perf.total_cycles += cycles;
+            if DEBUG_EXEC
+                print(" Cycles: +% = % |", cycles, state.perf.total_cycles);
+        }
+
+        store_ip(state, cast(u16)(state.ip + advance));
         exec_instruction(state, inst);
+
+        if DEBUG_EXEC
+            print("\n");
     }
 }
 
