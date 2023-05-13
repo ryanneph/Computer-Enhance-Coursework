@@ -621,6 +621,7 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
         case .ACCUMULATOR; #through;
         case .SEGMENT;
             assert(false, "Operand type should have been REGISTER, not %", operand.type);
+            return "INVALID";
 
         case .INVALID;
             assert(false, "Operand type has not been set");
@@ -1917,6 +1918,7 @@ estimate_perf_add :: (inst: *Instruction) -> s32 {
         return 4;
     }
     assert(false, "unhandled instruction: %", inst);
+    return -9999;
 }
 estimate_perf_mov :: (inst: *Instruction) -> s32 {
     if OP_TYPES(.MEMORY, .ACCUMULATOR) {
@@ -1943,6 +1945,7 @@ estimate_perf_mov :: (inst: *Instruction) -> s32 {
         return 9 + estimate_perf_effective_addr(*inst.dst.mem, inst.segment_override);
     }
     assert(false, "unhandled instruction: %", inst);
+    return -9999;
 }
 
 estimate_perf_for_file :: (filename: string, output_filename: string = "8086_perf_estimate.asm") {
