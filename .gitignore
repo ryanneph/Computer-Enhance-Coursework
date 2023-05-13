@@ -2,5 +2,6 @@ cmuratori-computer_enhance/*
 main
 8086_disassembly.asm
 8086_memory_dump.raw
+8086_perf_estimate.asm
 test_temp/
 .build/

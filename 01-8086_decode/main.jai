@@ -172,6 +172,10 @@ Operand_Type :: enum {
     MEMORY;
     IMMEDIATE;
     INCREMENT;
+
+    // only used during perf estimation; DO NOT SET ON OPERAND
+    ACCUMULATOR;
+    SEGMENT;
 }
 Operand :: struct {
     type: Operand_Type;
@@ -613,6 +617,11 @@ operand_to_string :: (inst: Instruction, operand: Operand) -> string {
             }
             return builder_to_string(*builder);
         }
+
+        case .ACCUMULATOR; #through;
+        case .SEGMENT;
+            assert(false, "Operand type should have been REGISTER, not %", operand.type);
+
         case .INVALID;
             assert(false, "Operand type has not been set");
             return "INVALID";
@@ -1843,6 +1852,140 @@ execute_file :: (filename: string, dump_memory: bool = false) {
     }
 }
 
+estimate_perf_effective_addr :: (memory: Memory, segment_override: Register) -> s32 {
+    cycles: s32 = 0;
+    if #complete memory.mode == {
+        case .DIRECT;
+            cycles = 6;
+
+        case .NO_DISP;
+            if memory.reg2 == .INVALID
+                cycles = 5;
+            else if (memory.reg1 == .BP && memory.reg2 == .DI) || (memory.reg1 == .BX && memory.reg2 == .SI)
+                cycles = 7;
+            else
+                cycles = 8;
+
+        case .DISP_U8; #through;
+        case .DISP_U16;
+            if memory.reg2 == .INVALID
+                cycles = 9;
+            else if (memory.reg1 == .BP && memory.reg2 == .DI) || (memory.reg1 == .BX && memory.reg2 == .SI)
+                cycles = 11;
+            else
+                cycles = 12;
+
+        case .INVALID;  assert(false, "invalid operand Memory_Mode: %", memory);
+    }
+
+    // Special case for [bp + 0], which is always encoded with {field_rm: 0b110, field_mod: 0b01, displacement: 0}
+    // due to direct addressing reserving {field_rm: 0b110, field_mod: 0b00, displacement: <direct>}.
+    if (memory.mode == .DISP_U8 && memory.reg1 == .BP && memory.reg2 == .INVALID && memory.disp == 0)
+        cycles = 5;
+
+    if segment_override != .INVALID
+        cycles += 2;
+
+    return cycles;
+}
+OP_TYPES :: (dst_type: Operand_Type, src_type: Operand_Type) -> bool #expand {
+    is_accumulator :: (operand: Operand)-> bool #expand {
+        return operand.type == .REGISTER &&
+            (operand.reg == .AX || operand.reg == .AL || operand.reg == .AH);
+    }
+    is_segment :: (operand: Operand) -> bool #expand {
+        return operand.type == .REGISTER &&
+            (operand.reg == .ES || operand.reg == .CS || operand.reg == .SS || operand.reg == .DS);
+    }
+
+    return (`inst.dst.type == dst_type || (dst_type == .ACCUMULATOR && is_accumulator(`inst.dst)) || (dst_type == .SEGMENT && is_segment(`inst.dst))) &&
+           (`inst.src.type == src_type || (src_type == .ACCUMULATOR && is_accumulator(`inst.src)) || (src_type == .SEGMENT && is_segment(`inst.src)));
+}
+
+estimate_perf_add :: (inst: *Instruction) -> s32 {
+    if OP_TYPES(.REGISTER, .REGISTER) {
+        return 3;
+    } else if OP_TYPES(.REGISTER, .MEMORY) {
+        return 9 + estimate_perf_effective_addr(inst.src.mem, inst.segment_override);
+    } else if OP_TYPES(.MEMORY, .REGISTER) {
+        return 16 + estimate_perf_effective_addr(inst.dst.mem, inst.segment_override);
+    } else if OP_TYPES(.REGISTER, .IMMEDIATE) {
+        return 4;
+    } else if OP_TYPES(.MEMORY, .IMMEDIATE) {
+        return 17 + estimate_perf_effective_addr(inst.dst.mem, inst.segment_override);
+    } else if OP_TYPES(.ACCUMULATOR, .IMMEDIATE) {
+        return 4;
+    }
+    assert(false, "unhandled instruction: %", inst);
+}
+estimate_perf_mov :: (inst: *Instruction) -> s32 {
+    if OP_TYPES(.MEMORY, .ACCUMULATOR) {
+        return 10;
+    } else if OP_TYPES(.ACCUMULATOR, .MEMORY) {
+        return 10;
+    } else if OP_TYPES(.REGISTER, .REGISTER) {
+        return 2;
+    } else if OP_TYPES(.REGISTER, .MEMORY) {
+        return 8 + estimate_perf_effective_addr(*inst.src.mem, inst.segment_override);
+    } else if OP_TYPES(.MEMORY, .REGISTER) {
+        return 9 + estimate_perf_effective_addr(*inst.dst.mem, inst.segment_override);
+    } else if OP_TYPES(.REGISTER, .IMMEDIATE) {
+        return 4;
+    } else if OP_TYPES(.MEMORY, .IMMEDIATE) {
+        return 10 + estimate_perf_effective_addr(*inst.dst.mem, inst.segment_override);
+    } else if OP_TYPES(.SEGMENT, .REGISTER) {
+        return 2;
+    } else if OP_TYPES(.SEGMENT, .MEMORY) {
+        return 8 + estimate_perf_effective_addr(*inst.src.mem, inst.segment_override);
+    } else if OP_TYPES(.REGISTER, .SEGMENT) {
+        return 2;
+    } else if OP_TYPES(.MEMORY, .SEGMENT) {
+        return 9 + estimate_perf_effective_addr(*inst.dst.mem, inst.segment_override);
+    }
+    assert(false, "unhandled instruction: %", inst);
+}
+
+estimate_perf_for_file :: (filename: string, output_filename: string = "8086_perf_estimate.asm") {
+    bytes: []u8 = file_read_all_as_bytes(filename);
+    total_cycles := 0;
+
+    DEBUG_DECODE = false;
+
+    builder: String_Builder;
+    offset := 0;
+    while offset < bytes.count {
+        head := bytes.data + offset;
+
+        inst, advance := decode_once(head);
+        offset += advance;
+
+        cycles: s32 = 0;
+        if inst.type == {
+            case .ADC; #through;
+            case .ADD;
+                cycles = estimate_perf_add(*inst);
+
+            case .MOV;
+                cycles = estimate_perf_mov(*inst);
+        }
+
+        assert(cycles > 0, "Unhandled instruction:\n'%'", inst);
+        total_cycles += cycles;
+
+        line := tprint("% | Cycles: +% = %\n", instruction_to_string(*inst), cycles, total_cycles);
+        print("%", line);
+        print_to_builder(*builder, "%", line);
+    }
+
+    file, opened := file_open(output_filename, for_writing=true, keep_existing_content=false);
+    assert(opened, "Failed to open file '%' for writing disassembly.", output_filename);
+
+    file_write(*file, "; auto-generated 8086 disassembly\n");
+    file_write(*file, "bits 16\n\n");
+    file_write(*file, *builder);
+    file_close(*file);
+}
+
 print_usage :: (args: []string) {
     print(#string ENDUSAGE
 usage:  % [options] <command> [command args]
@@ -1855,6 +1998,8 @@ commands:
           "decode <file>"
   exec    execute the 8086 assembled binary file
           "exec <file>"
+  perf    estimate performance of each instruction
+          "perf <file>"
   test    run all known tests
 ENDUSAGE, args[0]);
 }
@@ -1874,6 +2019,11 @@ main :: () {
         arg_parsing_error(args, "not enough arguments provided");
 
     for i: 1..args.count-1 {
+        check_arg_count :: (min_remain: u32) #expand {
+            if (i + 1 >= args.count)
+                arg_parsing_error(args, "not enough arguments provided");
+        }
+
         if args[i] == {
             // Options (must all be before first recognized "Command")
             case "-dump";
@@ -1881,14 +2031,16 @@ main :: () {
 
             // Commands
             case "decode";
-                if (i + 1 >= args.count)
-                    arg_parsing_error(args, "not enough arguments provided");
+                check_arg_count(1);
                 disassemble_file(args[i + 1]);
                 break;
             case "exec";
-                if (i + 1 >= args.count)
-                    arg_parsing_error(args, "not enough arguments provided");
+                check_arg_count(1);
                 execute_file(args[i + 1], dump_memory=options.dump);
+                break;
+            case "perf";
+                check_arg_count(1);
+                estimate_perf_for_file(args[i + 1]);
                 break;
             case "test";
                 run_tests();
