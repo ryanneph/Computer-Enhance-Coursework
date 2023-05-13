@@ -74,10 +74,29 @@ flags_equal :: inline (state: *Processor_State, flags: Flag) -> bool {
 }
 
 processor_state_equal :: (state: *Processor_State, expected: *Processor_State) -> bool {
-    equal := true;
-    equal &= !memcmp(expected.register_memory.data, state.register_memory.data, size_of(type_of(expected.register_memory)));
-    equal &= state.ip == expected.ip;
-    return equal;
+    registers_equal := !memcmp(expected.register_memory.data, state.register_memory.data, size_of(type_of(expected.register_memory)));
+    if !registers_equal {
+        format_string :=
+#string END
+    Registers mismatch:
+      - expected: %
+      - actual:   %
+END
+        print(format_string, expected.register_memory, state.register_memory);
+    }
+
+    ip_equal := state.ip == expected.ip;
+    if !ip_equal {
+        format_string :=
+#string END
+    IP register mismatch:
+      - expected: %
+      - actual:   %
+END
+        print(format_string, expected.ip, state.ip);
+    }
+
+    return registers_equal && ip_equal;
 }
 
 validate_immediate_movs :: (state: *Processor_State) -> bool {
