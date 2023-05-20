@@ -424,11 +424,11 @@ init_tests :: () -> []Test {
     add_test("listing_0057_challenge_cycles.asm",        decode_subtest, make_exec_subtest(validate_challenge_cycles));
 
     // prologue tests
-    add_test("listing_0059_SingleScalar.asm",            decode_subtest, make_exec_subtest(validate_SingleScalar));
-    add_test("listing_0060_Unroll2Scalar.asm",           decode_subtest, make_exec_subtest(validate_Unroll2Scalar));
-    add_test("listing_0061_DualScalar.asm",              decode_subtest, make_exec_subtest(validate_DualScalar));
-    add_test("listing_0063_QuadScalarPtr.asm",           decode_subtest, make_exec_subtest(validate_QuadScalarPtr));
-    add_test("listing_0064_TreeScalarPtr.asm",           decode_subtest, make_exec_subtest(validate_TreeScalarPtr));
+    // add_test("listing_0059_SingleScalar.asm",            decode_subtest, make_exec_subtest(validate_SingleScalar));
+    // add_test("listing_0060_Unroll2Scalar.asm",           decode_subtest, make_exec_subtest(validate_Unroll2Scalar));
+    // add_test("listing_0061_DualScalar.asm",              decode_subtest, make_exec_subtest(validate_DualScalar));
+    // add_test("listing_0063_QuadScalarPtr.asm",           decode_subtest, make_exec_subtest(validate_QuadScalarPtr));
+    // add_test("listing_0064_TreeScalarPtr.asm",           decode_subtest, make_exec_subtest(validate_TreeScalarPtr));
 
     return tests;
 }

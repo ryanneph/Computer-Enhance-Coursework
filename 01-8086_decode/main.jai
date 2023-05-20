@@ -397,6 +397,11 @@ Operand_Count :: enum {
     UNARY   :: 1;
     BINARY  :: 2;
 }
+Operand_Width :: enum {
+    IMPLICIT :: 0;
+    BYTE;
+    WORD;
+}
 
 Instruction_Flags :: enum_flags u32 {
     REPEAT_ZERO;
@@ -417,6 +422,11 @@ Instruction :: struct {
     flags: Instruction_Flags;
     explicit_size: bool; // requires explicit operand size prefix ("byte"/"word")
     size: u32; // of encoded instruction
+
+    // width of operation, considering all operands
+    // used by execution of various instructions (arithmetic, logical, ...) to calculate
+    // updates to the FLAGS register (e.g. sign bit may test bit 8 or 16 of the destination value).
+    operand_width: Operand_Width;
 
     segment_override: Register;
 
@@ -1354,6 +1364,44 @@ decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, segment_override: 
     return flags, segment_override, advance_count;
 }
 
+get_operand_width :: (operand: Operand) -> Operand_Width {
+    if #complete operand.type == {
+        case .REGISTER;
+            def := register_def(operand.reg);
+            assert(def.size == 1 || def.size == 2);
+            return ifx def.size == 2 then Operand_Width.WORD else .BYTE;
+        case .MEMORY;
+            return ifx operand.mem.word then Operand_Width.WORD else .BYTE;
+        case .IMMEDIATE;
+            return .IMPLICIT;
+        case .INCREMENT;
+            return .IMPLICIT;
+
+        case .INVALID;     #through;
+        case .ACCUMULATOR; #through;
+        case .SEGMENT;
+            assert(false, "Unexpected operand type %", operand.type);
+            return .IMPLICIT;
+    }
+}
+resolve_instruction_width :: (inst: *Instruction) {
+    if (inst.operand_count != .ZERO) {
+        width := get_operand_width(inst.dst);
+        if width != .IMPLICIT {
+            inst.operand_width = width;
+            return;
+        } else if (inst.operand_count != .UNARY) {
+            width := get_operand_width(inst.src);
+            assert(width != .IMPLICIT);
+            inst.operand_width = width;
+            return;
+        }
+    }
+
+    // let downstream users complain if they need explicit size and we failed to get one.
+    inst.operand_width = .IMPLICIT;
+}
+
 decode_once_actually :: (head: *u8) -> (Instruction, advance: s32) {
     flags, segment_override, prefix_advance := decode_all_prefix_bytes(head);
     head += prefix_advance;
@@ -1371,6 +1419,9 @@ decode_once_actually :: (head: *u8) -> (Instruction, advance: s32) {
     inst.segment_override = segment_override; // ignored unless (flags & .SEGMENT_OVERRIDE)
     advance_count := op_info.decode(*inst, head);
     inst.size = cast(u32) advance_count;
+
+    // analyze all operands and determine the explicit "width" of the operation
+    resolve_instruction_width(*inst);
 
     assert(inst.type != .INVALID, "Instruction dispatch handler must resolve instruction if not resolvable automatically from the first byte");
     assert(inst.desc.count > 0, "Instruction dispatch handler must provide a description");
@@ -1614,6 +1665,12 @@ set_flag :: (flags: *u16, flag: Flag, value: bool) {
     if value  { (<<flags) |=   cast(u16) flag;  }
     else      { (<<flags) &= ~(cast(u16) flag); }
 }
+determine_flag_parity :: (value: u16) -> bool {
+    // parity (low-order 8-bits have even number of set bits)
+    set_count := 0;
+    for 0..7  set_count += cast(s64) cast(bool) (value & (1 << it));
+    return !(set_count & 0x1);
+}
 
 exec_mov :: (state: *Processor_State, inst: Instruction) {
     value := load_operand(state, inst.src);
@@ -1625,18 +1682,20 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
     dst: u32 = cast(u32) load_operand(state, inst.dst);
     src: u32 = cast(u32) load_operand(state, inst.src);
 
-    // TODO(ryan): only supports 16-bit ops
-    assert((inst.dst.type != .REGISTER || register_def(inst.dst.reg).size == 2) &&
-           (inst.src.type != .REGISTER || register_def(inst.src.reg).size == 2));
     operand_mask := 0xFFFF;
     sign_mask    := 0x8000;
+    assert(inst.operand_width != .IMPLICIT);
+    if (inst.operand_width == .BYTE) {
+        operand_mask = 0xFF;
+        sign_mask    = 0x80;
+    }
 
     if inst.type == .SUB || inst.type == .CMP
         src = ((~src) + 1) & 0xFFFF;
 
     value32: u32; // for detecting CARRY
     aux_carry: bool;
-    carry: bool;
+    carry: bool = cast(bool) (original_flags & cast(u16) Flag.CARRY);
     if inst.type == {
         case .ADD;
             value32 = dst + src;
@@ -1662,11 +1721,7 @@ exec_arithmetic :: (state: *Processor_State, inst: Instruction) {
         set_flag(*flags, Flag.CARRY,     carry);
         set_flag(*flags, Flag.AUX_CARRY, aux_carry);
         set_flag(*flags, Flag.OVERFLOW,  cast(bool) sign_mask & ~(src ^ dst) & (value ^ dst));
-
-        // parity (low-order 8-bits have even number of set bits)
-        set_count := 0;
-        for 0..7  set_count += cast(s64) cast(bool) (value & (1 << it));
-        set_flag(*flags, Flag.PARITY, set_count % 2 == 0);
+        set_flag(*flags, Flag.PARITY,    determine_flag_parity(value));
     }
 
     if (flags != original_flags)
@@ -1785,6 +1840,78 @@ exec_interrupt :: (state: *Processor_State, inst: Instruction) {
 
     if DEBUG_EXEC  print("<<< END INTERRUPT %\n", interrupt);
 }
+exec_logical :: (state: *Processor_State, inst: Instruction) {
+    original_flags: u16 = load_register(state, .FLAG);
+
+    dst_value := load_operand(state, inst.dst);
+    src_value: u16;
+
+    if inst.operand_count == .BINARY
+        src_value = load_operand(state, inst.src);
+
+    if inst.type == {
+        case .NOT;
+            dst_value = ~dst_value;
+        case .AND;  #through;
+        case .TEST;
+            dst_value &= src_value;
+        case .OR;
+            dst_value |= src_value;
+        case .XOR;
+            dst_value ^= src_value;
+        case;
+            assert(false, "unhandled instruction type %", inst.type);
+    };
+
+    if inst.type != .TEST
+        store_operand(state, inst.dst, dst_value);
+
+
+    // FLAGS UPDATE
+    //   - overflow and carry are unset
+    //   - auxiliary carry is undefined
+    //   - sign, zero, parity are updated,
+    flags: u16 = 0;
+
+    operand_mask := 0xFFFF;
+    sign_mask    := 0x8000;
+    assert(inst.operand_width != .IMPLICIT);
+    if (inst.operand_width == .BYTE) {
+        operand_mask = 0xFF;
+        sign_mask    = 0x80;
+    }
+
+    set_flag(*flags, Flag.SIGN,   cast(bool) dst_value & sign_mask);
+    set_flag(*flags, Flag.ZERO,   (dst_value & operand_mask) == 0);
+    set_flag(*flags, Flag.PARITY, determine_flag_parity(dst_value));
+
+    if (flags != original_flags)
+        store_register(state, .FLAG, flags);
+}
+exec_increment :: (state: *Processor_State, inst: Instruction) {
+    // updates AF, OF, PF, SF, ZF
+    value: u16 = load_operand(state, inst.dst);
+    new_value := value + 1;
+    store_operand(state, inst.dst, new_value);
+
+    operand_mask := 0xFFFF;
+    sign_mask    := 0x8000;
+    assert(inst.operand_width != .IMPLICIT);
+    if (inst.operand_width == .BYTE) {
+        operand_mask = 0xFF;
+        sign_mask    = 0x80;
+    }
+
+    original_flags: u16 = load_register(state, .FLAG);
+    flags: u16 = original_flags;
+    set_flag(*flags, .AUX_CARRY, cast(bool) ((value ^ new_value) & 0x10));
+    set_flag(*flags, .OVERFLOW,  value == 0);
+    set_flag(*flags, .PARITY,    determine_flag_parity(value));
+    set_flag(*flags, .SIGN,      cast(bool) (new_value & sign_mask));
+
+    if (flags != original_flags)
+        store_register(state, .FLAG, flags);
+}
 exec_instruction :: (state: *Processor_State, inst: Instruction) {
     if inst.type == {
         case .MOV; exec_mov(state, inst);
@@ -1795,6 +1922,17 @@ exec_instruction :: (state: *Processor_State, inst: Instruction) {
         case .SUB;
         // case .SBB; #through;
             exec_arithmetic(state, inst);
+
+        case .INC; #through;
+        case .DEC;
+            exec_increment(state, inst);
+
+        case .NOT;  #through;
+        case .AND;  #through;
+        case .OR;   #through;
+        case .XOR;  #through;
+        case .TEST;
+            exec_logical(state, inst);
 
         case .JBE_JNA;     #through;
         case .JB_JNAE_JC;  #through;
@@ -1953,7 +2091,7 @@ execute_from_ip :: (state: *Processor_State, estimate_perf: bool = false) {
         head := state.memory.data + state.ip;
         inst, advance := decode_once(head, *state.icache);
 
-        if inst.type == .HLT  break;
+        if inst.type == .HLT || inst.type == .RET break;
 
         if DEBUG_EXEC
             print("% ;", instruction_to_string(*inst));
