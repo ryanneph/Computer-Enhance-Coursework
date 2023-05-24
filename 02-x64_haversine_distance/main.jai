@@ -1,5 +1,6 @@
 #import "Basic";
 #import "File";
+#import "Math";
 #import "Random";
 
 Point_Pair :: struct {
@@ -7,7 +8,7 @@ Point_Pair :: struct {
     x1, y1: float64;
 }
 
-generate_pairs :: (count: u64) -> [..]Point_Pair {
+generate_pairs_uniform :: (count: u64) -> [..]Point_Pair {
     pairs: [..]Point_Pair;
 
     for 0..count-1 {
@@ -41,18 +42,76 @@ format_as_json :: (pairs: [..]Point_Pair, allocator: Allocator) -> string {
     return builder_to_string(*builder);
 }
 
+reference_haversine :: (pair: Point_Pair, earth_radius: float64 = 6372.8) -> float64 {
+    radians :: inline (degrees: float64) -> float64 {
+        return degrees * 0.01745329251994329577;
+    }
+
+    lat0 := pair.y0;
+    lat1 := pair.y1;
+    lon0 := pair.x0;
+    lon1 := pair.x1;
+
+    dlat := radians(lat1 - lat0);
+    dlon := radians(lon1 - lon0);
+    lat0  = radians(lat0);
+    lat1  = radians(lat1);
+
+    a := square(sin(dlat / 2.0)) + cos(lat0) * cos(lat1) * square(sin(dlon / 2.0));
+    c := 2.0 * asin(sqrt(a));
+
+    result := earth_radius * c;
+    return result;
+}
+
 main :: () {
-    pairs := generate_pairs(10);
+    pair_count: u64 = 10000000;
 
+    pairs := generate_pairs_uniform(pair_count);
+    dists: [..]float64;
+    array_resize(*dists, pairs.count);
+
+    average: float64 = 0;
+    for pair: pairs {
+        dist := reference_haversine(pair);
+        average += dist;
+        dists[it_index] = dist;
+    }
+    average /= pairs.count;
+
+    // json encoding
     json_string := format_as_json(pairs, temporary_allocator);
-    print("%\n", json_string);
 
+    json_output_file := "haversine_input.json";
+    write_entire_file(json_output_file, json_string);
+
+    // binary encoding
     {
-        output_file := "haversine_input.json";
+        output_file := "haversine_reference.bin";
         file, success := file_open(output_file, for_writing=true);
         assert(success);
 
-        file_write(*file, json_string);
+        WRITE :: (value: $T) #expand {
+            written := file_write(*file, *value, size_of(T));
+            assert(written);
+        }
+
+        count: u64 = xx pairs.count;
+        WRITE(count);
+
+        for pair: pairs {
+            pair_encoding: struct {
+                pair: Point_Pair;
+                distance: float64;
+            };
+            pair_encoding.pair = pair;
+            pair_encoding.distance = dists[it_index];
+
+            WRITE(pair_encoding);
+        }
+
         file_close(*file);
     }
+
+    print("average of % pairs: %\n", pairs.count, average);
 }
