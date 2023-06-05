@@ -8,14 +8,43 @@ print_debug_output := false;
 Parse_State :: struct {
     json_string: string;
     cursor: s64;
+    line: s64;
     level: s64;
 
-    string_open: bool;
+    string_escape: bool;
     string_buffer: String_Builder;
+    latest_string: string;
 }
 
-parse_to_node_tree :: (state: *Parse_State) -> (root: *Json_Node) {
-    using state;
+string_char_allowed :: (char: u8, escaped := false) -> bool {
+    if escaped {
+        if char == {
+            case #char "\""; #through;
+            case #char "\\"; #through;
+            case #char "/";  #through;
+            case #char "b";  #through;
+            case #char "f";  #through;
+            case #char "n";  #through;
+            case #char "r";  #through;
+            case #char "t";  #through;
+            case #char "u";
+                return true;
+
+            case;
+                return false;
+        }
+    } else {
+        // NOT control characters (excluding space) OR \ OR "
+        return !(char <= 31 || char == 127 || char == #char "\\" || char == #char "\"");
+    }
+}
+
+parse_to_node_tree :: (json_string_input: string) -> (root: *Json_Node) {
+    using state: Parse_State;
+    state.json_string = json_string_input;
+    state.cursor = 0;
+    state.line = 1;
+    state.level = 0;
 
     root: *Json_Node;
     node_stack: [..] *Json_Node;
@@ -40,13 +69,20 @@ parse_to_node_tree :: (state: *Parse_State) -> (root: *Json_Node) {
 
     debug_print :: (message: string, args: ..Any) #expand {
         if !print_debug_output  return;
-        print(message, args);
+        print(message, ..args);
     }
     debug_print_char :: (char: u8) #expand {
         if !print_debug_output  return;
         print_character(char);
     }
 
+    Parse_Mode :: enum_flags {
+        NORMAL;
+        STRING;
+        OBJECT_NAME;
+        OBJECT_VALUE;
+    };
+    parse_mode := Parse_Mode.NORMAL;
 
     while cursor < json_string.count {
         char: u8 = json_string[cursor];
@@ -64,16 +100,48 @@ parse_to_node_tree :: (state: *Parse_State) -> (root: *Json_Node) {
         else          debug_print("0x%", char);
         debug_print("': ");
 
-        if string_open && char != #char "\"" {
-            append(*string_buffer, char);
-            debug_print("append to string\n");
+        if parse_mode == .STRING {
+            // TODO(ryan): handle escaped (i.e. '\"')
+            if char == #char "\"" && !string_escape {
+                s := builder_to_string(*string_buffer, do_reset = true);
+                debug_print("String (close; value='%')\n", s);
+                latest_string = s;
+
+                parent := peek(node_stack);
+                assert(parent.type == .OBJECT);
+
+                parse_mode = .NORMAL;
+                string_escape = false;
+            } else if char == #char "\\" {
+                debug_print("begin char escape\n");
+                string_escape = true;
+            } else {
+                if !string_char_allowed(char, string_escape) {
+                    print("ERROR: invalid character (0x%; '", char);
+                    print_character(char);
+                    print("') in string sequence at line %\n", line);
+                }
+
+                if string_escape && char == #char "u" {
+                    print("UTF-16 hex codepoints aren't supported yet. skipping 4 characters.\n");
+                    cursor += 4;
+                } else {
+                    append(*string_buffer, char);
+                    debug_print("append to string\n");
+                }
+
+                string_escape = false;
+            }
+
             continue;
         }
 
+        assert(!!(parse_mode & (Parse_Mode.NORMAL)));
         if char == {
             case #char "\n"; #through;
             case #char "\r";
                 debug_print("Newline\n");
+                line += 1;
 
             case #char " "; #through;
             case #char "\t";
@@ -84,16 +152,18 @@ parse_to_node_tree :: (state: *Parse_State) -> (root: *Json_Node) {
 
             case #char "\"";
                 debug_print("String ");
-                if string_open {
+                if parse_mode == .STRING {
                     s := builder_to_string(*string_buffer, do_reset = true);
                     debug_print("(close; value='%')\n", s);
 
                     parent := peek(node_stack);
                     assert(parent.type == .OBJECT);
+
+                    parse_mode = .NORMAL;
                 } else {
                     debug_print("(open)\n");
-                };
-                string_open = !string_open;
+                    parse_mode = .STRING;
+                }
 
             case #char "{";
                 level += 1;
@@ -123,7 +193,6 @@ parse_to_node_tree :: (state: *Parse_State) -> (root: *Json_Node) {
         }
     }
     assert(level == 0);
-    assert(!string_open);
 
     return root;
 }
@@ -180,12 +249,7 @@ parse_json :: (input_filename: string, debug_output := true) -> (Json_Document, 
     file_string, success := read_entire_file(input_filename);
     print("FILE CONTENTS\n%\n", file_string);
 
-    state: Parse_State;
-    state.json_string = file_string;
-    state.cursor = 0;
-    state.level = 0;
-
-    root := parse_to_node_tree(*state);
+    root := parse_to_node_tree(file_string);
 
     doc: Json_Document;
     doc.root = root;
