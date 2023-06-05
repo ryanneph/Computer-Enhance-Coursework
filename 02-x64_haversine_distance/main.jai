@@ -1,4 +1,5 @@
 #import "Basic";
+#import "Command_Line";
 #import "File";
 #import "Math";
 #import "Random";
@@ -64,9 +65,7 @@ reference_haversine :: (pair: Point_Pair, earth_radius: float64 = 6372.8) -> flo
     return result;
 }
 
-main :: () {
-    pair_count: u64 = 10000000;
-
+generate :: (pair_count: u64) {
     pairs := generate_pairs_uniform(pair_count);
     dists: [..]float64;
     array_resize(*dists, pairs.count);
@@ -114,4 +113,52 @@ main :: () {
     }
 
     print("average of % pairs: %\n", pairs.count, average);
+}
+
+#load "json.jai";
+compute :: (input_name: string) {
+    json_doc, success := parse_json(input_name);
+    if !success {
+        print("failed to parse json: '%'\n", input_name);
+        return;
+    }
+
+    print("JSON DOC: \n%\n", json_doc);
+}
+
+Program_Args :: struct {
+    mode: string;  @"?choose from {generate, compute}"
+    count: s64;    @"?generator output instance count"
+    input: string; @"?json input filename"
+}
+
+main :: () {
+    success, args, is_set, free_args := parse_arguments(Program_Args,
+        Argument_Flags.FREE_ARGUMENTS_ALLOWED | .ALIGN_HELP);
+
+    if !args.mode.count {
+        args.mode = "compute";
+        print("'-mode' not set, defaulting to '%'.\n", args.mode);
+    }
+    if args.mode == {
+        case "compute";
+            if !args.input.count {
+                args.input = "haversine_input.json";
+                print("'-input' not set, defaulting to '%'.\n", args.input);
+            }
+            compute(args.input);
+
+        case "generate";
+            if args.count <= 0 {
+                old_count := args.count;
+                args.count = 10;
+                print("invalid value for '-count': %. Using default: %.\n",
+                    old_count, args.count);
+            }
+            generate(xx args.count);
+
+        case;
+            print("invalid value for '-mode': '%'.\n", args.mode);
+    }
+
 }
