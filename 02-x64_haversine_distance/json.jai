@@ -1,6 +1,7 @@
 #import "Basic";
 #import "File";
 #import "Hash_Table";
+#import "String";
 
 #scope_file;
 print_debug_output := false;
@@ -42,13 +43,10 @@ string_char_allowed :: (char: u8, escaped := false) -> bool {
 Json_Token_Type :: enum {
     OBJECT_BEGIN;
     OBJECT_END;
-    OBJECT_NAME_RAW; // unparsed string that must still be validated
-    OBJECT_VALUE_RAW; // unparsed string that may contain sub-hierarchy
     OBJECT_NAME_VALUE_SEPARATOR;
 
     ARRAY_BEGIN;
     ARRAY_END;
-    ARRAY_MEMBER_RAW; // unparsed string that may contain sub-hierarchy
 
     MEMBER_SEPARATOR;
     WHITESPACE;
@@ -87,7 +85,11 @@ Lex_State :: struct {
     string_buffer: String_Builder;
 }
 
-lex :: (json_string_input: string) -> [..] *Json_Token {
+lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
+    if print_debug_output {
+        print("JSON CONTENTS\n%\n", json_string_input);
+    }
+
     using state: Lex_State;
     state.json_string = json_string_input;
     state.cursor = 0;
@@ -106,6 +108,7 @@ lex :: (json_string_input: string) -> [..] *Json_Token {
         return token;
     }
 
+    error_found := false;
     while cursor < json_string.count {
         char: u8 = json_string[cursor];
         defer cursor += 1;
@@ -284,12 +287,257 @@ lex :: (json_string_input: string) -> [..] *Json_Token {
             }
         }
 
-        print("UNKNOWN CHAR: '%'\n", char);
-        assert(false);
+        print("Unexpected Char: '");
+        print_character(char);
+        print("'\n", char);
+        error_found = true;
+        break;
     }
-    assert(level == 0);
 
-    return tokens;
+    if level != 0 {
+        print("Error: unbalanced container types. Finished lexing at level %, but expected level 0.", level);
+        error_found = true;
+    }
+
+    if error_found {
+        array_reset(*tokens);
+        return tokens, false;
+    }
+
+    if print_debug_output {
+        print("LEXED TOKENS:\n");
+        for token: tokens {
+            if token.type == .WHITESPACE  continue;
+
+            for 1..2*token.level  print(" ");
+            print("%: ", it_index+1);
+            print("%", <<token);
+
+            if token.type != .WHITESPACE {
+                s: string;
+                s.data = json_string_input.data + token.offset;
+                s.count = token.count;
+
+                print(": '%'", s);
+            }
+            print("\n");
+        }
+    }
+
+    return tokens, true;
+}
+
+token_to_boolean_node :: inline (token: *Json_Token) -> *Json_Node_Boolean {
+    assert(token.type == .BOOLEAN);
+
+    node := New_Node(Json_Node_Boolean, .BOOLEAN);
+    node.value = (cast(*Json_Token_Boolean)token).value;
+    return node;
+}
+token_to_string_node :: inline (token: *Json_Token) -> *Json_Node_String {
+    assert(token.type == .STRING);
+
+    node := New_Node(Json_Node_String, .STRING);
+    node.value = (cast(*Json_Token_String)token).value;
+    return node;
+}
+token_to_number_node :: inline (token: *Json_Token) -> *Json_Node_Number {
+    assert(token.type == .NUMBER);
+
+    node := New_Node(Json_Node_Number, .NUMBER);
+    float_string := (cast(*Json_Token_Number)token).value_string;
+
+    success: bool;
+    node.value, success = parse_float(*float_string);
+    if !success {
+        print("Failed to parse string to float: '%'\n", float_string);
+        return null;
+    }
+    return node;
+}
+
+token_to_value_node :: inline (token: *Json_Token) -> *Json_Node {
+    node: *Json_Node = null;
+    if token.type == {
+        case .STRING;
+            node = token_to_string_node(token);
+        case .NUMBER;
+            node = token_to_number_node(token);
+        case .BOOLEAN;
+            node = token_to_boolean_node(token);
+        case .NULL;
+            node = New_Node(Json_Node_Null, .NULL);
+    }
+    return node;
+}
+
+parse_tokens :: (tokens: [] *Json_Token) -> *Json_Node {
+    if !tokens  return null;
+
+    root := New_Node(Json_Node_Array, .ARRAY);
+
+    stack: [..] *Json_Node;
+    array_add(*stack, root);
+
+    // skips whitespace tokens
+    next_token :: () -> *Json_Token #expand {
+        while true {
+            token_index += 1;
+            if token_index >= tokens.count
+                return null;
+
+            token := tokens[token_index];
+            if token.type != .WHITESPACE
+                return token;
+        }
+    }
+
+    token_index := 0;
+    token := tokens[0];
+    while token {
+        parent := peek(stack);
+        if parent.type == .ARRAY {
+            parent_array_node := cast(*Json_Node_Array) parent;
+
+            if token.type == .ARRAY_END {
+                print("Ending array\n");
+                // NOCHECKIN;
+                for parent_array_node.arr {
+                    print("  %\n", <<it);
+                }
+
+                pop(*stack);
+                token = next_token();
+                continue;
+            }
+
+            // enforce json format ","
+            if parent_array_node.arr.count {
+                if token.type != .MEMBER_SEPARATOR {
+                    print("invalid token '%' following array member definition.\n", token.type);
+                    return null;
+                } else {
+                    token = next_token();
+                }
+            }
+
+            node := token_to_value_node(token);
+            if node {
+                array_add(*parent_array_node.arr, node);
+                print("Added % to %: %\n", node.type, parent.type, <<node);
+            } else {
+                if token.type == {
+                    case .OBJECT_BEGIN;
+                        node := New_Node(Json_Node_Object, .OBJECT);
+                        array_add(*parent_array_node.arr, node);
+                        print("Added object to array: %\n", <<node);
+
+                        array_add(*stack, node);
+
+                    case .ARRAY_BEGIN;
+                        node := New_Node(Json_Node_Array, .ARRAY);
+                        array_add(*parent_array_node.arr, node);
+                        print("Added array to array: %\n", <<node);
+
+                        array_add(*stack, node);
+
+                    case .OBJECT_END;
+                        print("Unexpected OBJECT_END token while processing open array.\n");
+                        return null;
+
+                    case;
+                        print("unhandled token type %\n", token.type);
+                }
+            }
+
+            token = next_token();
+        } else {
+            assert(parent.type == .OBJECT);
+            parent_object_node := cast(*Json_Node_Object) parent;
+
+            if token.type == .OBJECT_END {
+                print("Ending object\n");
+                // NOCHECKIN;
+                for parent_object_node.table {
+                    print("  %: %\n", it_index, <<it);
+                }
+
+                pop(*stack);
+                token = next_token();
+                continue;
+            }
+
+            // enforce json format ","
+            if parent_object_node.table.count {
+                if token.type != .MEMBER_SEPARATOR {
+                    print("invalid token '%' following object member definition.\n", token.type);
+                    return null;
+                } else {
+                    token = next_token();
+                }
+            }
+
+            // get the entry name string
+            if token.type != .STRING {
+                print("Expected member name string but found token of type %\n", token.type);
+                return null;
+            }
+            string_token := cast(*Json_Token_String) token;
+            print("Found member name string: '%'\n", string_token.value);
+
+            // enforce json format ":"
+            token = next_token();
+            if !token || token.type != .OBJECT_NAME_VALUE_SEPARATOR {
+                print("Expected ':' between name string and value for object member\n");
+                return null;
+            }
+
+            token = next_token();
+            if !token {
+                print("Expected value token but reached end-of-file.\n");
+                return null;
+            }
+
+            node := token_to_value_node(token);
+            if node {
+                table_add(*parent_object_node.table, string_token.value, node);
+                print("Added % to %: (\"%\": %)\n", node.type, parent.type, string_token.value, <<node);
+            } else {
+                if token.type == {
+                    case .OBJECT_BEGIN;
+                        node := New_Node(Json_Node_Object, .OBJECT);
+                        table_add(*parent_object_node.table, string_token.value, node);
+                        print("Added % to %: (\"%\": %)\n", node.type, parent.type, string_token.value, <<node);
+
+                        array_add(*stack, node);
+
+                    case .ARRAY_BEGIN;
+                        node := New_Node(Json_Node_Array, .ARRAY);
+                        table_add(*parent_object_node.table, string_token.value, node);
+                        print("Added % to %: (\"%\": %)\n", node.type, parent.type, string_token.value, <<node);
+
+                        array_add(*stack, node);
+
+                    case .ARRAY_END;
+                        print("Unexpected ARRAY_END token while processing open object.\n");
+                        return null;
+
+                    case;
+                        print("Unexpected token type %\n", token.type);
+                        return null;
+                }
+            }
+
+            token = next_token();
+        }
+    }
+
+    if token_index < tokens.count {
+        print("% tokens remain after parsing.\n");
+        return null;
+    }
+
+    return root;
 }
 
 
@@ -315,7 +563,7 @@ Json_Node_Object :: struct {
 }
 Json_Node_Array :: struct {
     using #as base: Json_Node;
-    array: [..] *Json_Node;
+    arr: [..] *Json_Node;
 }
 Json_Node_String :: struct {
     using #as base: Json_Node;
@@ -333,6 +581,14 @@ Json_Node_Null :: struct {
     using #as base: Json_Node;
 }
 
+New_Node :: ($T: Type, node_type: Json_Node_Type) -> *T {
+    node := New(T);
+    node.type = node_type;
+
+    return node;
+}
+
+
 // TODO(ryan): chunked linear allocator for all storage, free all on destruction.
 Json_Document :: struct {
     root: *Json_Node;
@@ -341,34 +597,24 @@ Json_Document :: struct {
     _allocator: Allocator;
 }
 
-parse_json :: (input_filename: string, debug_output := false) -> (Json_Document, success: bool) {
+parse_json :: (input_filename: string, debug_output := true) -> (Json_Document, success: bool) {
     print_debug_output = debug_output;
 
-    file_string, success := read_entire_file(input_filename);
-    print("FILE CONTENTS\n%\n", file_string);
+    file_string, read_success := read_entire_file(input_filename);
+    assert(read_success);
 
-    tokens := lex(file_string);
-
-    print("TOKENS:\n");
-    for token: tokens {
-        if token.type == .WHITESPACE  continue;
-
-        for 1..2*token.level  print(" ");
-        print("%: ", it_index+1);
-        print("%", <<token);
-
-        if token.type != .WHITESPACE {
-            s: string;
-            s.data = file_string.data + token.offset;
-            s.count = token.count;
-
-            print(": '%'", s);
-        }
-        print("\n");
+    tokens, lex_success := lex(file_string);
+    if (!lex_success) {
+        print("Failed lexing file '%'\n", input_filename);
+        exit(1);
     }
 
     root: *Json_Node = null;
-    // root := parse_tokens_to_node_tree(tokens);
+    root = parse_tokens(tokens);
+    if !root {
+        print("Failed parsing file '%'\n", input_filename);
+        exit(1);
+    }
 
     doc: Json_Document;
     doc.root = root;
