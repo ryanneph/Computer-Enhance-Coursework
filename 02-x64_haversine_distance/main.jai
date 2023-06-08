@@ -12,6 +12,10 @@ Point_Pair :: struct {
 generate_pairs_uniform :: (count: u64) -> [..]Point_Pair {
     pairs: [..]Point_Pair;
 
+    time := current_time_monotonic();
+    time_ms := to_milliseconds(time);
+    random_seed(cast(u64) time_ms);
+
     for 0..count-1 {
         p: Point_Pair = ---;
         p.x0 = random_get_within_range(-180, 180);
@@ -77,6 +81,7 @@ generate :: (pair_count: u64) {
         dists[it_index] = dist;
     }
     average /= pairs.count;
+    print("average of % pairs: %\n", pairs.count, average);
 
     // json encoding
     json_string := format_as_json(pairs, temporary_allocator);
@@ -110,9 +115,8 @@ generate :: (pair_count: u64) {
         }
 
         file_close(*file);
+        print("Generated % pairs and saved to file '%'\n", pairs.count, output_file);
     }
-
-    print("average of % pairs: %\n", pairs.count, average);
 }
 
 #load "json.jai";
@@ -123,7 +127,38 @@ compute :: (input_name: string) {
         return;
     }
 
-    print("JSON DOC: \n%\n", json_doc);
+    assert(json_doc.root.type == .OBJECT);
+    node, found := table_find(*(cast(*Json_Node_Object)json_doc.root).table, "pairs");
+    assert(found);
+
+    sum: float64 = 0.0;
+    pairs_node := cast(*Json_Node_Array) node;
+    for pairs_node.arr {
+        assert(it.type == .OBJECT);
+        pair_node := cast(*Json_Node_Object) it;
+
+        get_member :: (member_name: string) -> float64 #expand {
+            node, found := table_find(*pair_node.table, member_name);
+            assert(found && node.type == .NUMBER);
+
+            number_node := cast(*Json_Node_Number) node;
+            return number_node.value;
+        }
+
+        pair: Point_Pair;
+        pair.x0 = get_member("x0");
+        pair.y0 = get_member("y0");
+        pair.x1 = get_member("x1");
+        pair.y1 = get_member("y1");
+
+        haversine_distance := reference_haversine(pair);
+        sum += haversine_distance;
+        // print("Pair: % -> %\n", pair, haversine_distance);
+    }
+
+    count := pairs_node.arr.count;
+    average: float64 = sum / cast(float64)count;
+    print("Average of % pairs: %\n", count, average);
 }
 
 Program_Args :: struct {
@@ -155,7 +190,7 @@ main :: () {
                 print("invalid value for '-count': %. Using default: %.\n",
                     old_count, args.count);
             }
-            generate(xx args.count);
+            generate(cast(u64) args.count);
 
         case;
             print("invalid value for '-mode': '%'.\n", args.mode);
