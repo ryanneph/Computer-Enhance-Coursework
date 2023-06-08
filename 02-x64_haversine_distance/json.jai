@@ -14,26 +14,28 @@ debug_print_char :: (char: u8) {
     print_character(char);
 }
 
-string_char_allowed :: (char: u8, escaped := false) -> bool {
-    if escaped {
-        if char == {
-            case #char "\""; #through;
-            case #char "\\"; #through;
-            case #char "/";  #through;
-            case #char "b";  #through;
-            case #char "f";  #through;
-            case #char "n";  #through;
-            case #char "r";  #through;
-            case #char "t";  #through;
-            case #char "u";
+#if false {
+    validate_string :: (char: u8, escaped := false) -> bool {
+        if escaped {
+            if char == {
+                case #char "\""; #through;
+                case #char "\\"; #through;
+                case #char "/";  #through;
+                case #char "b";  #through;
+                case #char "f";  #through;
+                case #char "n";  #through;
+                case #char "r";  #through;
+                case #char "t";  #through;
+                case #char "u";
                 return true;
 
             case;
                 return false;
+            }
+        } else {
+            // NOT control characters (excluding space) OR \ OR "
+            return !(char <= 31 || char == 127 || char == #char "\\" || char == #char "\"");
         }
-    } else {
-        // NOT control characters (excluding space) OR \ OR "
-        return !(char <= 31 || char == 127 || char == #char "\\" || char == #char "\"");
     }
 }
 
@@ -61,7 +63,6 @@ Json_Token :: struct {
     type: Json_Token_Type;
     offset: s64;
     count: s64;
-    level: s64;
 }
 Json_Token_String :: struct {
     using #as base: Json_Token;
@@ -76,6 +77,14 @@ Json_Token_Boolean :: struct {
     value: bool;
 }
 
+New_Token :: ($T: Type, token_type: Json_Token_Type, offset: s64, char_count: s64) -> *T {
+    token := New(T);
+    token.type = token_type;
+    token.offset = offset;
+    token.count = char_count;
+    return token;
+}
+
 Lex_State :: struct {
     json_string: string;
     cursor: s64;
@@ -85,11 +94,7 @@ Lex_State :: struct {
     string_buffer: String_Builder;
 }
 
-lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
-    if print_debug_output {
-        print("JSON CONTENTS\n%\n", json_string_input);
-    }
-
+lex :: (json_string_input: string, tokenize_whitespace := false) -> ([..] *Json_Token, success: bool) {
     using state: Lex_State;
     state.json_string = json_string_input;
     state.cursor = 0;
@@ -97,13 +102,8 @@ lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
 
     tokens: [..] *Json_Token;
 
-    New_Token :: ($T: Type, token_type: Json_Token_Type, offset: s64, char_count: s64) -> *T #expand {
-        token := New(T);
-        token.type = token_type;
-        token.offset = offset;
-        token.count = char_count;
-        token.level = level;
-
+    Add_Token :: ($T: Type, token_type: Json_Token_Type, offset: s64, char_count: s64) -> *T #expand {
+        token := New_Token(T, token_type, offset, char_count);
         array_add(*tokens, token);
         return token;
     }
@@ -147,7 +147,8 @@ lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
             if next_cursor > cursor {
                 whitespace_count := next_cursor - cursor;
                 debug_print("Whitespace (count=%)\n", whitespace_count);
-                New_Token(Json_Token, .WHITESPACE, cursor, whitespace_count);
+                if tokenize_whitespace
+                    Add_Token(Json_Token, .WHITESPACE, cursor, whitespace_count);
                 cursor = next_cursor - 1;
                 continue;
             }
@@ -171,7 +172,7 @@ lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
 
                     debug_print("String ('%')\n",  s);
 
-                    token := New_Token(Json_Token_String, .STRING, offset, s.count);
+                    token := Add_Token(Json_Token_String, .STRING, offset, s.count);
                     token.value = s;
 
                     cursor = next_cursor;
@@ -192,29 +193,29 @@ lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
         if char == {
             case #char ":";
                 debug_print("Object name/value separator\n");
-                token := New_Token(Json_Token, .OBJECT_NAME_VALUE_SEPARATOR, cursor, 1);
+                Add_Token(Json_Token, .OBJECT_NAME_VALUE_SEPARATOR, cursor, 1);
 
             case #char "{";
                 debug_print("Object (begin level=%)\n", level);
-                token := New_Token(Json_Token, .OBJECT_BEGIN, cursor, 1);
+                Add_Token(Json_Token, .OBJECT_BEGIN, cursor, 1);
                 level += 1;
             case #char "}";
-                level -= 1;
                 debug_print("Object (end level=%)\n", level);
-                token := New_Token(Json_Token, .OBJECT_END, cursor, 1);
+                Add_Token(Json_Token, .OBJECT_END, cursor, 1);
+                level -= 1;
 
             case #char "[";
                 debug_print("Array (begin level=%)\n", level);
-                token := New_Token(Json_Token, .ARRAY_BEGIN,cursor,  1);
+                Add_Token(Json_Token, .ARRAY_BEGIN,cursor,  1);
                 level += 1;
             case #char "]";
-                level -= 1;
                 debug_print("Array (end level=%)\n", level);
-                token := New_Token(Json_Token, .ARRAY_END, cursor, 1);
+                Add_Token(Json_Token, .ARRAY_END, cursor, 1);
+                level -= 1;
 
             case #char ",";
                 debug_print("Member end\n");
-                token := New_Token(Json_Token, .MEMBER_SEPARATOR, cursor, 1);
+                Add_Token(Json_Token, .MEMBER_SEPARATOR, cursor, 1);
 
             case;
                 keep_trying = true;
@@ -238,16 +239,15 @@ lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
 
             if bool_true || bool_false {
                 bool_char_count := ifx bool_true then 4 else 5;
-
-                token := New_Token(Json_Token_Boolean, .BOOLEAN, cursor, bool_char_count);
+                token := Add_Token(Json_Token_Boolean, .BOOLEAN, cursor, bool_char_count);
                 token.value = bool_true;
-
                 debug_print("Boolean (%)\n", token.value);
 
                 cursor += bool_char_count - 1;
                 continue;
+
             } else if is_null {
-                token := New_Token(Json_Token, .NULL, cursor, 4);
+                Add_Token(Json_Token, .NULL, cursor, 4);
                 debug_print("Null\n");
 
                 cursor += 4 - 1;
@@ -278,7 +278,7 @@ lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
                 s.data = json_string.data + cursor;
                 s.count = number_char_count;
 
-                token := New_Token(Json_Token_Number, .NUMBER, cursor, number_char_count);
+                token := Add_Token(Json_Token_Number, .NUMBER, cursor, number_char_count);
                 token.value_string = s;
 
                 debug_print("Number ('%')\n", s);
@@ -295,7 +295,7 @@ lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
     }
 
     if level != 0 {
-        print("Error: unbalanced container types. Finished lexing at level %, but expected level 0.", level);
+        print("Error: unbalanced container types. Finished lexing at level %, but expected level 0.\n", level);
         error_found = true;
     }
 
@@ -306,10 +306,24 @@ lex :: (json_string_input: string) -> ([..] *Json_Token, success: bool) {
 
     if print_debug_output {
         print("LEXED TOKENS:\n");
-        for token: tokens {
-            if token.type == .WHITESPACE  continue;
 
-            for 1..2*token.level  print(" ");
+        print_level := 0;
+        for token: tokens {
+            if token.type == {
+                case .WHITESPACE;
+                    continue;
+
+                case .ARRAY_BEGIN; #through;
+                case .OBJECT_BEGIN;
+                    print_level += 1;
+
+                case .ARRAY_END; #through;
+                case .OBJECT_END;
+                    print_level -= 1;
+            }
+            assert(print_level >= 0);
+
+            for 1..2*print_level  print(" ");
             print("%: ", it_index+1);
             print("%", <<token);
 
@@ -371,13 +385,14 @@ token_to_value_node :: inline (token: *Json_Token) -> *Json_Node {
     return node;
 }
 
-parse_tokens :: (tokens: [] *Json_Token) -> *Json_Node {
+parse_tokens :: (tokens: [] *Json_Token) -> (root: *Json_Node) {
     if !tokens  return null;
 
-    root := New_Node(Json_Node_Array, .ARRAY);
+    throwaway_root: Json_Node_Array;
+    throwaway_root.type = .ARRAY;
 
     stack: [..] *Json_Node;
-    array_add(*stack, root);
+    array_add(*stack, *throwaway_root);
 
     // skips whitespace tokens
     next_token :: () -> *Json_Token #expand {
@@ -400,11 +415,7 @@ parse_tokens :: (tokens: [] *Json_Token) -> *Json_Node {
             parent_array_node := cast(*Json_Node_Array) parent;
 
             if token.type == .ARRAY_END {
-                print("Ending array\n");
-                // NOCHECKIN;
-                for parent_array_node.arr {
-                    print("  %\n", <<it);
-                }
+                debug_print("Ending array\n");
 
                 pop(*stack);
                 token = next_token();
@@ -418,26 +429,32 @@ parse_tokens :: (tokens: [] *Json_Token) -> *Json_Node {
                     return null;
                 } else {
                     token = next_token();
+
+                    // catch trailing ","
+                    if token && token.type == .ARRAY_END {
+                        print("trailing ',' not allowed but found in array.\n");
+                        return null;
+                    }
                 }
             }
 
             node := token_to_value_node(token);
             if node {
                 array_add(*parent_array_node.arr, node);
-                print("Added % to %: %\n", node.type, parent.type, <<node);
+                debug_print("Added % to %: %\n", node.type, parent.type, <<node);
             } else {
                 if token.type == {
                     case .OBJECT_BEGIN;
                         node := New_Node(Json_Node_Object, .OBJECT);
                         array_add(*parent_array_node.arr, node);
-                        print("Added object to array: %\n", <<node);
+                        debug_print("Added object to array: %\n", <<node);
 
                         array_add(*stack, node);
 
                     case .ARRAY_BEGIN;
                         node := New_Node(Json_Node_Array, .ARRAY);
                         array_add(*parent_array_node.arr, node);
-                        print("Added array to array: %\n", <<node);
+                        debug_print("Added array to array: %\n", <<node);
 
                         array_add(*stack, node);
 
@@ -456,11 +473,7 @@ parse_tokens :: (tokens: [] *Json_Token) -> *Json_Node {
             parent_object_node := cast(*Json_Node_Object) parent;
 
             if token.type == .OBJECT_END {
-                print("Ending object\n");
-                // NOCHECKIN;
-                for parent_object_node.table {
-                    print("  %: %\n", it_index, <<it);
-                }
+                debug_print("Ending object\n");
 
                 pop(*stack);
                 token = next_token();
@@ -474,6 +487,12 @@ parse_tokens :: (tokens: [] *Json_Token) -> *Json_Node {
                     return null;
                 } else {
                     token = next_token();
+
+                    // catch trailing ","
+                    if token && token.type == .OBJECT_END {
+                        print("trailing ',' not allowed but found in array.\n");
+                        return null;
+                    }
                 }
             }
 
@@ -483,7 +502,7 @@ parse_tokens :: (tokens: [] *Json_Token) -> *Json_Node {
                 return null;
             }
             string_token := cast(*Json_Token_String) token;
-            print("Found member name string: '%'\n", string_token.value);
+            debug_print("Found member name string: '%'\n", string_token.value);
 
             // enforce json format ":"
             token = next_token();
@@ -501,20 +520,20 @@ parse_tokens :: (tokens: [] *Json_Token) -> *Json_Node {
             node := token_to_value_node(token);
             if node {
                 table_add(*parent_object_node.table, string_token.value, node);
-                print("Added % to %: (\"%\": %)\n", node.type, parent.type, string_token.value, <<node);
+                debug_print("Added % to %: (\"%\": %)\n", node.type, parent.type, string_token.value, <<node);
             } else {
                 if token.type == {
                     case .OBJECT_BEGIN;
                         node := New_Node(Json_Node_Object, .OBJECT);
                         table_add(*parent_object_node.table, string_token.value, node);
-                        print("Added % to %: (\"%\": %)\n", node.type, parent.type, string_token.value, <<node);
+                        debug_print("Added % to %: (\"%\": %)\n", node.type, parent.type, string_token.value, <<node);
 
                         array_add(*stack, node);
 
                     case .ARRAY_BEGIN;
                         node := New_Node(Json_Node_Array, .ARRAY);
                         table_add(*parent_object_node.table, string_token.value, node);
-                        print("Added % to %: (\"%\": %)\n", node.type, parent.type, string_token.value, <<node);
+                        debug_print("Added % to %: (\"%\": %)\n", node.type, parent.type, string_token.value, <<node);
 
                         array_add(*stack, node);
 
@@ -537,7 +556,15 @@ parse_tokens :: (tokens: [] *Json_Token) -> *Json_Node {
         return null;
     }
 
-    return root;
+    assert(throwaway_root.arr.count == 1);
+    return throwaway_root.arr[0];
+}
+
+New_Node :: ($T: Type, node_type: Json_Node_Type) -> *T {
+    node := New(T);
+    node.type = node_type;
+
+    return node;
 }
 
 
@@ -581,14 +608,6 @@ Json_Node_Null :: struct {
     using #as base: Json_Node;
 }
 
-New_Node :: ($T: Type, node_type: Json_Node_Type) -> *T {
-    node := New(T);
-    node.type = node_type;
-
-    return node;
-}
-
-
 // TODO(ryan): chunked linear allocator for all storage, free all on destruction.
 Json_Document :: struct {
     root: *Json_Node;
@@ -597,11 +616,12 @@ Json_Document :: struct {
     _allocator: Allocator;
 }
 
-parse_json :: (input_filename: string, debug_output := true) -> (Json_Document, success: bool) {
+parse_json :: (input_filename: string, debug_output := false) -> (Json_Document, success: bool) {
     print_debug_output = debug_output;
 
     file_string, read_success := read_entire_file(input_filename);
     assert(read_success);
+    debug_print("JSON CONTENTS\n%\n", file_string);
 
     tokens, lex_success := lex(file_string);
     if (!lex_success) {
@@ -609,8 +629,7 @@ parse_json :: (input_filename: string, debug_output := true) -> (Json_Document, 
         exit(1);
     }
 
-    root: *Json_Node = null;
-    root = parse_tokens(tokens);
+    root := parse_tokens(tokens);
     if !root {
         print("Failed parsing file '%'\n", input_filename);
         exit(1);
@@ -621,4 +640,29 @@ parse_json :: (input_filename: string, debug_output := true) -> (Json_Document, 
     doc._allocator = context.allocator;
 
     return doc, true;
+}
+
+free_memory :: (doc: Json_Document) {
+    new_context: Context;
+    new_context.allocator = doc._allocator;
+    push_context new_context {
+        stack: [..] *Json_Node;
+        array_add(*stack, doc.root);
+
+        while stack.count {
+            node := pop(*stack);
+
+            if node.type == .ARRAY {
+                array_node := cast(*Json_Node_Array)node;
+                for subnode: array_node.arr
+                    array_add(*stack, subnode);
+            } else if node.type == .OBJECT {
+                object_node := cast(*Json_Node_Object)node;
+                for subnode: object_node.table
+                    array_add(*stack, subnode);
+            }
+
+            free(node);
+        }
+    }
 }
