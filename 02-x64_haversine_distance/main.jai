@@ -161,20 +161,25 @@ compute :: (input_name: string) {
     print("Average of % pairs: %\n", count, average);
 }
 
+arg_parse_flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED | .ALIGN_HELP;
+arg_parse_help_triggers :: string.["h", "help"];
 Program_Args :: struct {
     mode: string;  @"?choose from {generate, compute}"
     count: s64;    @"?generator output instance count"
     input: string; @"?json input filename"
 }
+show_help_wrapper :: inline () {
+    show_help(Program_Args, arg_parse_flags, arg_parse_help_triggers);
+}
 
 main :: () {
-    success, args, is_set, free_args := parse_arguments(Program_Args,
-        Argument_Flags.FREE_ARGUMENTS_ALLOWED | .ALIGN_HELP);
-
+    success, args, is_set, free_args := parse_arguments(Program_Args, arg_parse_flags, arg_parse_help_triggers);
     if !args.mode.count {
-        args.mode = "compute";
-        print("'-mode' not set, defaulting to '%'.\n", args.mode);
+        print("Error: mode was not set.\n");
+        show_help_wrapper();
+        exit(1);
     }
+
     if args.mode == {
         case "compute";
             if !args.input.count {
@@ -194,6 +199,6 @@ main :: () {
 
         case;
             print("invalid value for '-mode': '%'.\n", args.mode);
+            exit(1);
     }
-
 }
