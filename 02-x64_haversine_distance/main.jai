@@ -121,7 +121,7 @@ generate :: (pair_count: u64) {
 
 #load "json.jai";
 compute :: (input_name: string) {
-    json_doc, success := parse_json(input_name);
+    json_doc, success := parse_json(input_name, true);
     if !success {
         print("failed to parse json: '%'\n", input_name);
         return;
@@ -141,8 +141,15 @@ compute :: (input_name: string) {
             node, found := table_find(*pair_node.table, member_name);
             assert(found && node.type == .NUMBER);
 
-            number_node := cast(*Json_Node_Number) node;
-            return number_node.value;
+            number_node := node;
+
+            float_value, success := parse_float(*node.value_string);
+            if !success {
+                print("Error parsing float from string '%'.\n", node.value_string);
+                float_value = 0.0;
+            }
+
+            return float_value;
         }
 
         pair: Point_Pair;
@@ -153,7 +160,7 @@ compute :: (input_name: string) {
 
         haversine_distance := reference_haversine(pair);
         sum += haversine_distance;
-        // print("Pair: % -> %\n", pair, haversine_distance);
+        print("Pair: % -> %\n", pair, haversine_distance);
     }
 
     count := pairs_node.arr.count;
