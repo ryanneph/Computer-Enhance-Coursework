@@ -21,12 +21,6 @@ add_program_timing_segment_elapsed :: (desc: string, timer_elapsed: u64) {
 
     array_add(*program_timing, segment);
 }
-add_program_timing_segment :: (desc: string, timer_start: u64) {
-    timer_end := read_cpu_timer();
-    assert(timer_end >= timer_start);
-
-    add_program_timing_segment_elapsed(desc, timer_end - timer_start);
-}
 
 Timer :: struct {
     start: u64;
@@ -164,7 +158,7 @@ compute :: (input_filename: string) {
     json_string, read_success := read_entire_file(input_filename);
     assert(read_success);
     timer_stop(*file_read_timer);
-    add_program_timing_segment("read file", file_read_timer.elapsed);
+    add_program_timing_segment_elapsed("read file", file_read_timer.elapsed);
 
     timer_start(*json_parse_timer);
     json_doc, success := parse_json(json_string);
@@ -173,7 +167,7 @@ compute :: (input_filename: string) {
         return;
     }
     timer_stop(*json_parse_timer);
-    add_program_timing_segment("parse json", json_parse_timer.elapsed);
+    add_program_timing_segment_elapsed("parse json", json_parse_timer.elapsed);
 
     timer_start(*json_navigate_timer);
     assert(json_doc.root.type == .OBJECT);
