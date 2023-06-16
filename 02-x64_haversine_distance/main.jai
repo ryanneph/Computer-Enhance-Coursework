@@ -7,6 +7,39 @@
 #load "json.jai";
 #load "timer.jai";
 
+Program_Timing_Segment :: struct {
+    desc: string;
+    timer_elapsed: u64;
+
+    percentage: float64;
+}
+program_timing: [..] Program_Timing_Segment;
+add_program_timing_segment_elapsed :: (desc: string, timer_elapsed: u64) {
+    segment: Program_Timing_Segment;
+    segment.desc = desc;
+    segment.timer_elapsed = timer_elapsed;
+
+    array_add(*program_timing, segment);
+}
+add_program_timing_segment :: (desc: string, timer_start: u64) {
+    timer_end := read_cpu_timer();
+    assert(timer_end >= timer_start);
+
+    add_program_timing_segment_elapsed(desc, timer_end - timer_start);
+}
+
+Timer :: struct {
+    start: u64;
+    elapsed: u64;
+}
+timer_start :: inline (timer: *Timer) {
+    timer.start = read_cpu_timer();
+}
+timer_stop :: inline (timer: *Timer) {
+    timer_stop := read_cpu_timer();
+    timer.elapsed += timer_stop - timer.start;
+}
+
 Point_Pair :: struct {
     x0, y0: float64;
     x1, y1: float64;
@@ -122,15 +155,24 @@ generate :: (pair_count: u64) {
 }
 
 compute :: (input_name: string) {
+    json_parse_timer: Timer;
+    json_navigate_timer: Timer;
+    compute_timer: Timer;
+
+    timer_start(*json_parse_timer);
     json_doc, success := parse_json(input_name);
     if !success {
         print("failed to parse json: '%'\n", input_name);
         return;
     }
+    timer_stop(*json_parse_timer);
+    add_program_timing_segment("parse json", json_parse_timer.elapsed);
 
+    timer_start(*json_navigate_timer);
     assert(json_doc.root.type == .OBJECT);
     node, found := table_find(*(cast(*Json_Node_Object)json_doc.root).table, "pairs");
     assert(found);
+    timer_stop(*json_navigate_timer);
 
     sum: float64 = 0.0;
     pairs_node := cast(*Json_Node_Array) node;
@@ -153,16 +195,24 @@ compute :: (input_name: string) {
             return float_value;
         }
 
+        timer_start(*json_navigate_timer);
         pair: Point_Pair;
         pair.x0 = get_member("x0");
         pair.y0 = get_member("y0");
         pair.x1 = get_member("x1");
         pair.y1 = get_member("y1");
+        timer_stop(*json_navigate_timer);
 
+        timer_start(*compute_timer);
         haversine_distance := reference_haversine(pair);
         sum += haversine_distance;
-        print("Pair: % -> %\n", pair, haversine_distance);
+        timer_stop(*compute_timer);
+
+        // print("Pair: % -> %\n", pair, haversine_distance);
     }
+
+    add_program_timing_segment_elapsed("json navigation", json_navigate_timer.elapsed);
+    add_program_timing_segment_elapsed("compute", compute_timer.elapsed);
 
     count := pairs_node.arr.count;
     average: float64 = sum / cast(float64)count;
@@ -212,5 +262,16 @@ main :: () {
         case;
             print("invalid value for '-mode': '%'.\n", args.mode);
             exit(1);
+    }
+
+    total_elapsed: u64 = 0;
+    for *program_timing
+        total_elapsed += it.timer_elapsed;
+    for *program_timing
+        it.percentage = 100.0 * cast(float64) it.timer_elapsed / cast(float64) total_elapsed;
+
+    print("Program Timing:\n");
+    for program_timing {
+        print("  - %: % ticks (%0%% of measured)\n", it.desc, it.timer_elapsed, it.percentage);
     }
 }
