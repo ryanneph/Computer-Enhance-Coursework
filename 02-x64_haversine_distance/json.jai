@@ -38,9 +38,6 @@ Token_Type :: enum {
 }
 Token :: struct {
     type: Token_Type;
-    offset: s64;
-    count: s64;
-
     value_string: string;
 }
 New_Token :: (token_type: Token_Type, value_string: string) -> *Token {
@@ -477,6 +474,7 @@ Json_Node :: struct {
     type: Json_Node_Type;
     value_string: string;
 }
+// TODO(ryan): use linked list with one Json_Node type, instead of array/table members
 Json_Node_Object :: struct {
     using #as base: Json_Node;
     table: Table(string, *Json_Node);
@@ -501,10 +499,17 @@ parse_json :: (input_filename: string, debug_output := false) -> (Json_Document,
     assert(read_success);
     debug_print("JSON CONTENTS\n%\n", file_string);
 
-    tokens, lex_success := lex(file_string);
-    if (!lex_success) {
-        print("Failed lexing file '%'\n", input_filename);
-        exit(1);
+    temp_storage_context := context;
+    // temp_storage_context.allocator = temporary_allocator;
+
+    tokens: [..] *Token;
+    lex_success: bool;
+    push_context temp_storage_context {
+        tokens, lex_success = lex(file_string);
+        if (!lex_success) {
+            print("Failed lexing file '%'\n", input_filename);
+            exit(1);
+        }
     }
 
     root := parse_tokens(tokens);
@@ -512,6 +517,8 @@ parse_json :: (input_filename: string, debug_output := false) -> (Json_Document,
         print("Failed parsing file '%'\n", input_filename);
         exit(1);
     }
+
+    // reset_temporary_storage();
 
     doc: Json_Document;
     doc.root = root;
