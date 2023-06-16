@@ -281,7 +281,7 @@ token_to_value_node :: inline (token: *Token) -> *Json_Node {
     return node;
 }
 
-parse_tokens :: (tokens: [] *Token) -> (root: *Json_Node) {
+parse_tokens :: (tokens: [] *Token, iterative_token_cleanup := false) -> (root: *Json_Node) {
     if !tokens  return null;
 
     throwaway_root: Json_Node_Array;
@@ -293,6 +293,12 @@ parse_tokens :: (tokens: [] *Token) -> (root: *Json_Node) {
     next_token :: () -> *Token #expand {
         // skips whitespace tokens and returns null at end
         while true {
+            // NOTE(ryan): aggressively reclaim memory for no-longer-used tokens
+            if iterative_token_cleanup {
+                free(tokens[token_index]);
+                tokens[token_index] = null;
+            }
+
             token_index += 1;
             if token_index >= tokens.count
                 return null;
@@ -492,33 +498,36 @@ Json_Document :: struct {
     _allocator: Allocator;
 }
 
-parse_json :: (input_filename: string, debug_output := false) -> (Json_Document, success: bool) {
+parse_json :: (json_string: string, debug_output := false) -> (Json_Document, success: bool) {
     print_debug_output = debug_output;
 
-    file_string, read_success := read_entire_file(input_filename);
-    assert(read_success);
-    debug_print("JSON CONTENTS\n%\n", file_string);
-
+    // TODO(ryan): use a dynamically growable linear allocator, then free all token storage in one call.
+    // note that temporary_allocator doesn't support sizes large enough for 10M haversine pairs, so we need
+    // to roll our own.
     temp_storage_context := context;
-    // temp_storage_context.allocator = temporary_allocator;
 
     tokens: [..] *Token;
     lex_success: bool;
     push_context temp_storage_context {
-        tokens, lex_success = lex(file_string);
+        tokens, lex_success = lex(json_string);
         if (!lex_success) {
-            print("Failed lexing file '%'\n", input_filename);
+            print("Failed lexing json\n");
             exit(1);
         }
     }
 
-    root := parse_tokens(tokens);
+    // NOTE(ryan): parse_tokens() free()'s tokens as it monotonically iterates the token list.
+    // Non-null members of "tokens" must be free()'d by us.
+    root := parse_tokens(tokens, iterative_token_cleanup = true);
+    for token: tokens {
+        if token != null  free(token);
+    }
+    array_free(tokens);
+
     if !root {
-        print("Failed parsing file '%'\n", input_filename);
+        print("Failed parsing json\n");
         exit(1);
     }
-
-    // reset_temporary_storage();
 
     doc: Json_Document;
     doc.root = root;

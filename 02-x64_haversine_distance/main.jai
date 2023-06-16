@@ -154,15 +154,22 @@ generate :: (pair_count: u64) {
     }
 }
 
-compute :: (input_name: string) {
+compute :: (input_filename: string) {
+    file_read_timer: Timer;
     json_parse_timer: Timer;
     json_navigate_timer: Timer;
     compute_timer: Timer;
 
+    timer_start(*file_read_timer);
+    json_string, read_success := read_entire_file(input_filename);
+    assert(read_success);
+    timer_stop(*file_read_timer);
+    add_program_timing_segment("read file", file_read_timer.elapsed);
+
     timer_start(*json_parse_timer);
-    json_doc, success := parse_json(input_name);
+    json_doc, success := parse_json(json_string);
     if !success {
-        print("failed to parse json: '%'\n", input_name);
+        print("failed to parse json: '%'\n", input_filename);
         return;
     }
     timer_stop(*json_parse_timer);
@@ -230,6 +237,19 @@ show_help_wrapper :: inline () {
     show_help(Program_Args, arg_parse_flags, arg_parse_help_triggers);
 }
 
+summarize_program_timing :: () {
+    total_elapsed: u64 = 0;
+    for *program_timing
+        total_elapsed += it.timer_elapsed;
+    for *program_timing
+        it.percentage = 100.0 * cast(float64) it.timer_elapsed / cast(float64) total_elapsed;
+
+    print("Program Timing:\n");
+    for program_timing {
+        print("  - %: % ticks (%0%% of measured)\n", it.desc, it.timer_elapsed, it.percentage);
+    }
+}
+
 main :: () {
     success, args, is_set, free_args := parse_arguments(Program_Args, arg_parse_flags, arg_parse_help_triggers);
     if !args.mode.count {
@@ -245,6 +265,7 @@ main :: () {
                 print("'-input' not set, defaulting to '%'.\n", args.input);
             }
             compute(args.input);
+            summarize_program_timing();
 
         case "generate";
             if args.count <= 0 {
@@ -262,16 +283,5 @@ main :: () {
         case;
             print("invalid value for '-mode': '%'.\n", args.mode);
             exit(1);
-    }
-
-    total_elapsed: u64 = 0;
-    for *program_timing
-        total_elapsed += it.timer_elapsed;
-    for *program_timing
-        it.percentage = 100.0 * cast(float64) it.timer_elapsed / cast(float64) total_elapsed;
-
-    print("Program Timing:\n");
-    for program_timing {
-        print("  - %: % ticks (%0%% of measured)\n", it.desc, it.timer_elapsed, it.percentage);
     }
 }
