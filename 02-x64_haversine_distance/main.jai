@@ -4,6 +4,9 @@
 #import "Math";
 #import "Random";
 
+#load "json.jai";
+#load "timer.jai";
+
 Point_Pair :: struct {
     x0, y0: float64;
     x1, y1: float64;
@@ -104,14 +107,13 @@ generate :: (pair_count: u64) {
         WRITE(count);
 
         for pair: pairs {
-            pair_encoding: struct {
-                pair: Point_Pair;
-                distance: float64;
-            };
-            pair_encoding.pair = pair;
-            pair_encoding.distance = dists[it_index];
+            distance: float64 = dists[it_index];
 
-            WRITE(pair_encoding);
+            WRITE(pair.x0);
+            WRITE(pair.y0);
+            WRITE(pair.x1);
+            WRITE(pair.y1);
+            WRITE(distance);
         }
 
         file_close(*file);
@@ -119,7 +121,6 @@ generate :: (pair_count: u64) {
     }
 }
 
-#load "json.jai";
 compute :: (input_name: string) {
     json_doc, success := parse_json(input_name);
     if !success {
@@ -171,7 +172,7 @@ compute :: (input_name: string) {
 arg_parse_flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED | .ALIGN_HELP;
 arg_parse_help_triggers :: string.["h", "help"];
 Program_Args :: struct {
-    mode: string;  @"?choose from {generate, compute}"
+    mode: string;  @"?choose from {generate, compute, timing-summary}"
     count: s64;    @"?generator output instance count"
     input: string; @"?json input filename"
 }
@@ -203,6 +204,10 @@ main :: () {
                     old_count, args.count);
             }
             generate(cast(u64) args.count);
+
+        case "timing-summary";
+            report_timing_info();
+            exit(0);
 
         case;
             print("invalid value for '-mode': '%'.\n", args.mode);
