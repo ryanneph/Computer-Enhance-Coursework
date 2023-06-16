@@ -121,7 +121,7 @@ generate :: (pair_count: u64) {
 
 #load "json.jai";
 compute :: (input_name: string) {
-    json_doc, success := parse_json(input_name, true);
+    json_doc, success := parse_json(input_name);
     if !success {
         print("failed to parse json: '%'\n", input_name);
         return;

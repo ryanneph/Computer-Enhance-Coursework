@@ -50,26 +50,14 @@ New_Token :: (token_type: Token_Type, value_string: string) -> *Token {
     return token;
 }
 
-Lex_State :: struct {
-    json_string: string;
-    cursor: s64;
-    level: s64;
-
-    string_escape: bool;
-    string_buffer: String_Builder;
-}
-
-lex :: (json_string_input: string, tokenize_whitespace := false) -> ([..] *Token, success: bool) {
-    using state: Lex_State;
-    state.json_string = json_string_input;
-    state.cursor = 0;
-    state.level = 0;
-
+lex :: (json_string: string, tokenize_whitespace := false) -> ([..] *Token, success: bool) {
+    cursor: s64 = 0;
+    level: s64 = 0;
     tokens: [..] *Token;
 
     Add_Token :: (token_type: Token_Type, offset: s64, char_count: s64) -> *Token #expand {
         value_string: string;
-        value_string.data = json_string_input.data + offset;
+        value_string.data = json_string.data + offset;
         value_string.count = char_count;
 
         token := New_Token(token_type, value_string);
@@ -87,37 +75,31 @@ lex :: (json_string_input: string, tokenize_whitespace := false) -> ([..] *Token
             for i: 1..level * INDENT_SPACE_PER_LEVEL {
                 print(" ");
             }
-        }
-        debug_print("% '", cursor);
-        if char >= 32 debug_print_char(char);
-        else          debug_print("0x%", char);
-        debug_print("': ");
 
-        is_whitespace :: inline (char: u8) -> bool {
-            if char == {
-                case #char " ";  #through;
-                case #char "\n"; #through;
-                case #char "\r"; #through;
-                case #char "\t";
-                    return true;
-                case;
-                    return false;
-            }
+            print("% '", cursor);
+            if char >= 32 print_character(char);
+            else          print("0x%", char);
+            print("': ");
         }
 
         //
         // Whitespace
         //
         {
+            is_whitespace :: inline (char: u8) -> bool {
+                return char == #char " " || char == #char "\n" || char == #char "\r" || char == #char "\t";
+            }
+
             next_cursor := cursor;
             while next_cursor < json_string.count && is_whitespace(json_string[next_cursor]) {
                 next_cursor += 1;
             }
             if next_cursor > cursor {
-                whitespace_count := next_cursor - cursor;
-                debug_print("Whitespace (count=%)\n", whitespace_count);
-                if tokenize_whitespace
+                if tokenize_whitespace {
+                    whitespace_count := next_cursor - cursor;
                     Add_Token(.WHITESPACE, cursor, whitespace_count);
+                    debug_print("Whitespace (count=%)\n", whitespace_count);
+                }
                 cursor = next_cursor - 1;
                 continue;
             }
@@ -131,18 +113,9 @@ lex :: (json_string_input: string, tokenize_whitespace := false) -> ([..] *Token
             escaped := false;
             while next_cursor < json_string.count {
                 next_char := json_string[next_cursor];
-
                 if !escaped && next_char == #char "\"" {
-                    offset := cursor + 1;
-
-                    s: string;
-                    s.data = json_string.data + offset;
-                    s.count = next_cursor - cursor - 1;
-
-                    debug_print("String ('%')\n",  s);
-
-                    token := Add_Token(.STRING, offset, s.count);
-                    token.value_string = s;
+                    token := Add_Token(.STRING, cursor + 1, next_cursor - cursor - 1);
+                    debug_print("String ('%')\n", token.value_string);
 
                     cursor = next_cursor;
                     break;
@@ -158,38 +131,30 @@ lex :: (json_string_input: string, tokenize_whitespace := false) -> ([..] *Token
         //
         // Containers and Separators
         //
-        keep_trying := false;
+        token_type: Token_Type;
         if char == {
             case #char ":";
-                debug_print("Object name/value separator\n");
-                Add_Token(.OBJECT_NAME_VALUE_SEPARATOR, cursor, 1);
-
+                token_type = .OBJECT_NAME_VALUE_SEPARATOR;
             case #char "{";
-                debug_print("Object (begin level=%)\n", level);
-                Add_Token(.OBJECT_BEGIN, cursor, 1);
+                token_type = .OBJECT_BEGIN;
                 level += 1;
             case #char "}";
-                debug_print("Object (end level=%)\n", level);
-                Add_Token(.OBJECT_END, cursor, 1);
+                token_type = .OBJECT_END;
                 level -= 1;
-
             case #char "[";
-                debug_print("Array (begin level=%)\n", level);
-                Add_Token(.ARRAY_BEGIN,cursor,  1);
+                token_type = .ARRAY_BEGIN;
                 level += 1;
             case #char "]";
-                debug_print("Array (end level=%)\n", level);
-                Add_Token(.ARRAY_END, cursor, 1);
+                token_type = .ARRAY_END;
                 level -= 1;
-
             case #char ",";
-                debug_print("Member end\n");
-                Add_Token(.MEMBER_SEPARATOR, cursor, 1);
-
-            case;
-                keep_trying = true;
+                token_type = .MEMBER_SEPARATOR;
         }
-        if (!keep_trying)  continue;
+        if (token_type != .INVALID) {
+            token := Add_Token(token_type, cursor, 1);
+            debug_print("Container/Separator: %\n", token);
+            continue;
+        }
 
         //
         // Keywords: Boolean / null
@@ -215,10 +180,8 @@ lex :: (json_string_input: string, tokenize_whitespace := false) -> ([..] *Token
                 case;
                     print("invalid keyword '%'\n.", keyword);
             }
-
             if token_type != .INVALID {
                 token := Add_Token(token_type, cursor, keyword.count);
-                token.value_string = keyword;
                 print("Keyword ('%')\n", keyword);
             }
 
@@ -237,22 +200,14 @@ lex :: (json_string_input: string, tokenize_whitespace := false) -> ([..] *Token
 
             next_cursor := cursor;
             while next_cursor < json_string.count {
-                if !is_number_char(json_string[next_cursor])
-                    break;
-
+                if !is_number_char(json_string[next_cursor])  break;
                 next_cursor += 1;
             }
 
             number_char_count: s64 = next_cursor - cursor;
             if number_char_count > 0 {
-                s: string;
-                s.data = json_string.data + cursor;
-                s.count = number_char_count;
-
                 token := Add_Token(.NUMBER, cursor, number_char_count);
-                token.value_string = s;
-
-                debug_print("Number ('%')\n", s);
+                debug_print("Number ('%')\n", token.value_string);
                 cursor = next_cursor - 1;
                 continue;
             }
@@ -303,6 +258,13 @@ lex :: (json_string_input: string, tokenize_whitespace := false) -> ([..] *Token
     return tokens, true;
 }
 
+New_Node :: ($T: Type, node_type: Json_Node_Type) -> *T {
+    node := New(T);
+    node.type = node_type;
+
+    return node;
+}
+
 token_to_value_node :: inline (token: *Token) -> *Json_Node {
     node: *Json_Node;
     if token.type == {
@@ -331,8 +293,8 @@ parse_tokens :: (tokens: [] *Token) -> (root: *Json_Node) {
     stack: [..] *Json_Node;
     array_add(*stack, *throwaway_root);
 
-    // skips whitespace tokens
     next_token :: () -> *Token #expand {
+        // skips whitespace tokens and returns null at end
         while true {
             token_index += 1;
             if token_index >= tokens.count
@@ -495,13 +457,6 @@ parse_tokens :: (tokens: [] *Token) -> (root: *Json_Node) {
 
     assert(throwaway_root.arr.count == 1);
     return throwaway_root.arr[0];
-}
-
-New_Node :: ($T: Type, node_type: Json_Node_Type) -> *T {
-    node := New(T);
-    node.type = node_type;
-
-    return node;
 }
 
 
