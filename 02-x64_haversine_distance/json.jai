@@ -188,9 +188,12 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, succes
         // Number
         //
         {
+            to_lowercase :: (char: u8) -> u8 #expand {
+                char & ~32 & 0xff;
+            }
             is_number_char :: inline (char: u8) -> bool {
-                return char == #char "+" || char == #char "-" || char == #char "." || char == #char "e" ||
-                    char == #char "E" || (char >= #char "0" && char <= #char "9");
+                return (char >= #char "0" && char <= #char "9") || char == #char "+" || char == #char "-" ||
+                    char == #char "." || to_lowercase(char) == #char "e";
             }
 
             next_cursor := cursor;
