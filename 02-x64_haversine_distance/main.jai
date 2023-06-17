@@ -150,7 +150,6 @@ generate :: (pair_count: u64) {
 
 compute :: (input_filename: string) {
     file_read_timer: Timer;
-    json_parse_timer: Timer;
     compute_timer: Timer;
     node_lookup_timer: Timer;
     float_parse_timer: Timer;
@@ -161,14 +160,11 @@ compute :: (input_filename: string) {
     timer_stop(*file_read_timer);
     add_program_timing_segment_elapsed("read file", file_read_timer.elapsed);
 
-    timer_start(*json_parse_timer);
-    json_doc, success := parse_json(json_string);
-    if !success {
+    json_doc, parse_success := parse_json(json_string);
+    if !parse_success {
         print("failed to parse json: '%'\n", input_filename);
         return;
     }
-    timer_stop(*json_parse_timer);
-    add_program_timing_segment_elapsed("parse json", json_parse_timer.elapsed);
 
     found, pairs_node := find_node_by_name(json_doc.root, "pairs");
     assert(found);

@@ -1,4 +1,5 @@
 #import "Basic";
+#import "Bucket_Array";
 #import "File";
 #import "Hash_Table";
 #import "String";
@@ -40,26 +41,23 @@ Token :: struct {
     type: Token_Type;
     value_string: string;
 }
-New_Token :: (token_type: Token_Type, value_string: string) -> *Token {
-    token := New(Token);
-    token.type = token_type;
-    token.value_string = value_string;
-    return token;
-}
 
-lex :: (json_string: string, tokenize_whitespace := false) -> ([..] *Token, success: bool) {
+lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, success: bool) {
     cursor: s64 = 0;
     level: s64 = 0;
-    tokens: [..] *Token;
+    tokens: [..]Token;
 
-    Add_Token :: (token_type: Token_Type, offset: s64, char_count: s64) -> *Token #expand {
+    add_token :: (token_type: Token_Type, offset: s64, char_count: s64) -> *Token #expand {
         value_string: string;
         value_string.data = json_string.data + offset;
         value_string.count = char_count;
 
-        token := New_Token(token_type, value_string);
+        token: Token;
+        token.type = token_type;
+        token.value_string = value_string;
+
         array_add(*tokens, token);
-        return token;
+        return *tokens[tokens.count - 1];
     }
 
     error_found := false;
@@ -94,7 +92,7 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..] *Token, succ
             if next_cursor > cursor {
                 if tokenize_whitespace {
                     whitespace_count := next_cursor - cursor;
-                    Add_Token(.WHITESPACE, cursor, whitespace_count);
+                    add_token(.WHITESPACE, cursor, whitespace_count);
                     debug_print("Whitespace (count=%)\n", whitespace_count);
                 }
                 cursor = next_cursor - 1;
@@ -111,7 +109,7 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..] *Token, succ
             while next_cursor < json_string.count {
                 next_char := json_string[next_cursor];
                 if !escaped && next_char == #char "\"" {
-                    token := Add_Token(.STRING, cursor + 1, next_cursor - cursor - 1);
+                    token := add_token(.STRING, cursor + 1, next_cursor - cursor - 1);
                     debug_print("String ('%')\n", token.value_string);
 
                     cursor = next_cursor;
@@ -148,7 +146,7 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..] *Token, succ
                 token_type = .MEMBER_SEPARATOR;
         }
         if (token_type != .INVALID) {
-            token := Add_Token(token_type, cursor, 1);
+            token := add_token(token_type, cursor, 1);
             debug_print("Container/Separator: %\n", token);
             continue;
         }
@@ -178,7 +176,7 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..] *Token, succ
                     print("invalid keyword '%'\n.", keyword);
             }
             if token_type != .INVALID {
-                token := Add_Token(token_type, cursor, keyword.count);
+                token := add_token(token_type, cursor, keyword.count);
                 print("Keyword ('%')\n", keyword);
             }
 
@@ -203,7 +201,7 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..] *Token, succ
 
             number_char_count: s64 = next_cursor - cursor;
             if number_char_count > 0 {
-                token := Add_Token(.NUMBER, cursor, number_char_count);
+                token := add_token(.NUMBER, cursor, number_char_count);
                 debug_print("Number ('%')\n", token.value_string);
                 cursor = next_cursor - 1;
                 continue;
@@ -228,7 +226,7 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..] *Token, succ
     }
 
     if print_debug_output {
-        print("LEXED TOKENS:\n");
+        print("LEXED TOKENS (count=%, size=% bytes):\n", tokens.count, tokens.count * size_of(Token));
 
         print_level := 0;
         for token: tokens {
@@ -248,40 +246,14 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..] *Token, succ
 
             for 1..2*print_level  print(" ");
             print("%: ", it_index+1);
-            print("%\n", <<token);
+            print("%\n", token);
         }
     }
 
     return tokens, true;
 }
 
-New_Node :: ($T: Type, node_type: Json_Node_Type) -> *T {
-    node := New(T);
-    node.type = node_type;
-
-    return node;
-}
-
-token_to_value_node :: inline (token: *Token) -> *Json_Node {
-    node: *Json_Node;
-    if token.type == {
-        case .STRING;
-            node = New_Node(Json_Node, .STRING);
-        case .NUMBER;
-            node = New_Node(Json_Node, .NUMBER);
-        case .BOOLEAN;
-            node = New_Node(Json_Node, .BOOLEAN);
-        case .NULL;
-            node = New_Node(Json_Node, .NULL);
-        case;
-            return null;
-    }
-
-    node.value_string = token.value_string;
-    return node;
-}
-
-parse_tokens :: (tokens: [] *Token, iterative_token_cleanup := false) -> (root: *Json_Node) {
+parse_tokens :: (tokens: []Token) -> (root: *Json_Node) {
     if !tokens  return null;
 
     throwaway_root: Json_Node;
@@ -290,27 +262,30 @@ parse_tokens :: (tokens: [] *Token, iterative_token_cleanup := false) -> (root: 
     stack: [..] *Json_Node;
     array_add(*stack, *throwaway_root);
 
+    node_storage: Bucket_Array(Json_Node, 1024 * 1024);
+    New_Node :: (node_type: Json_Node_Type) -> *Json_Node #expand {
+        node: Json_Node;
+        node.type = node_type;
+
+        locator, pointer := bucket_array_add(*node_storage, node);
+        return pointer;
+    }
+
     next_token :: () -> *Token #expand {
         // skips whitespace tokens and returns null at end
         while true {
-            // NOTE(ryan): aggressively reclaim memory for no-longer-used tokens
-            if iterative_token_cleanup {
-                free(tokens[token_index]);
-                tokens[token_index] = null;
-            }
-
             token_index += 1;
             if token_index >= tokens.count
                 return null;
 
-            token := tokens[token_index];
+            token := *tokens[token_index];
             if token.type != .WHITESPACE
                 return token;
         }
     }
 
     token_index := 0;
-    token := tokens[0];
+    token := *tokens[0];
     while token {
         parent := peek(stack);
         if parent.type == .ARRAY || parent.type == .OBJECT {
@@ -361,48 +336,45 @@ parse_tokens :: (tokens: [] *Token, iterative_token_cleanup := false) -> (root: 
                 }
             }
 
-            node := token_to_value_node(token);
-            if node {
-                if member_name_token {
-                    assert(parent.type == .OBJECT);
-                    node.member_name = member_name_token.value_string;
-                }
-
-                if !parent.next_child {
-                    parent.next_child = node;
-                    parent.last_child = node;
-                } else {
-                    parent.last_child.next_sibling = node;
-                    parent.last_child = node;
-                }
-                debug_print("Added % to %: %\n", node.type, parent.type, <<node);
-            } else {
-                if token.type == {
-                    case .OBJECT_BEGIN; #through;
-                    case .ARRAY_BEGIN;
-                        node_type := ifx token.type == .OBJECT_BEGIN then Json_Node_Type.OBJECT else .ARRAY;
-                        node := New_Node(Json_Node, node_type);
-                        if member_name_token {
-                            assert(parent.type == .OBJECT);
-                            node.member_name = member_name_token.value_string;
-                        }
-                        debug_print("Added % to %: %\n", node.type, parent.type, <<node);
-
-                        if !parent.next_child {
-                            parent.next_child = node;
-                            parent.last_child = node;
-                        } else {
-                            parent.last_child.next_sibling = node;
-                            parent.last_child = node;
-                        }
-
-                        array_add(*stack, node);
-
-                    case;
-                        print("unhandled token type %\n", token.type);
-                }
+            node: *Json_Node = null;
+            if token.type == {
+                case .STRING;       node = New_Node(.STRING);
+                case .NUMBER;       node = New_Node(.NUMBER);
+                case .BOOLEAN;      node = New_Node(.BOOLEAN);
+                case .NULL;         node = New_Node(.NULL);
+                case .OBJECT_BEGIN; node = New_Node(.OBJECT);
+                case .ARRAY_BEGIN;  node = New_Node(.ARRAY);
+                case;
+                    print("unhandled token type %\n", token.type);
+                    return null;
             }
 
+            if member_name_token {
+                assert(parent.type == .OBJECT);
+                node.member_name = member_name_token.value_string;
+            }
+
+            if !parent.next_child {
+                parent.next_child = node;
+                parent.last_child = node;
+            } else {
+                parent.last_child.next_sibling = node;
+                parent.last_child = node;
+            }
+
+            if #complete node.type == {
+                case .STRING; #through;
+                case .NUMBER; #through;
+                case .BOOLEAN; #through;
+                case .NULL;
+                    node.value_string = token.value_string;
+
+                case .OBJECT; #through;
+                case .ARRAY;
+                    array_add(*stack, node);
+            }
+
+            debug_print("Added % to %: %\n", node.type, parent.type, <<node);
             token = next_token();
         }
     }
@@ -442,7 +414,6 @@ Json_Node :: struct {
     member_name: string;
 }
 
-// TODO(ryan): chunked linear allocator for all storage, free all on destruction.
 Json_Document :: struct {
     root: *Json_Node;
 
@@ -451,39 +422,41 @@ Json_Document :: struct {
 }
 
 parse_json :: (json_string: string, debug_output := false) -> (Json_Document, success: bool) {
+    json_lex_timer: Timer;
+    json_parse_timer: Timer;
+    json_token_cleanup_timer: Timer;
+
     print_debug_output = debug_output;
 
-    // TODO(ryan): use a dynamically growable linear allocator, then free all token storage in one call.
-    // note that temporary_allocator doesn't support sizes large enough for 10M haversine pairs, so we need
-    // to roll our own.
-    temp_storage_context := context;
-
-    tokens: [..] *Token;
-    lex_success: bool;
-    push_context temp_storage_context {
-        tokens, lex_success = lex(json_string);
-        if (!lex_success) {
-            print("Failed lexing json\n");
-            exit(1);
-        }
+    timer_start(*json_lex_timer);
+    tokens, lex_success := lex(json_string);
+    if (!lex_success) {
+        print("Failed lexing json\n");
+        return .{}, false;
     }
+    timer_stop(*json_lex_timer);
 
-    // NOTE(ryan): parse_tokens() free()'s tokens as it monotonically iterates the token list.
-    // Non-null members of "tokens" must be free()'d by us.
-    root := parse_tokens(tokens, iterative_token_cleanup = true);
-    for token: tokens {
-        if token != null  free(token);
-    }
+    // TODO(ryan): lex tokens during json parsing as needed.
+    timer_start(*json_parse_timer);
+    root_node := parse_tokens(tokens);
+    timer_stop(*json_parse_timer);
+
+    timer_start(*json_token_cleanup_timer);
     array_free(tokens);
+    timer_stop(*json_token_cleanup_timer);
 
-    if !root {
+    if !root_node {
         print("Failed parsing json\n");
-        exit(1);
+        return .{}, false;
     }
 
     doc: Json_Document;
-    doc.root = root;
+    doc.root = root_node;
     doc._allocator = context.allocator;
+
+    add_program_timing_segment_elapsed("json lexing", json_lex_timer.elapsed);
+    add_program_timing_segment_elapsed("json parsing", json_parse_timer.elapsed);
+    add_program_timing_segment_elapsed("json token cleanup", json_token_cleanup_timer.elapsed);
 
     return doc, true;
 }
