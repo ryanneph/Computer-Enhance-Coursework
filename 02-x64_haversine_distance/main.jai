@@ -170,19 +170,18 @@ compute :: (input_filename: string) {
     timer_stop(*json_parse_timer);
     add_program_timing_segment_elapsed("parse json", json_parse_timer.elapsed);
 
-    assert(json_doc.root.type == .OBJECT);
-    node, found := table_find(*(cast(*Json_Node_Object)json_doc.root).table, "pairs");
+    found, pairs_node := find_node_by_name(json_doc.root, "pairs");
     assert(found);
 
     sum: float64 = 0.0;
-    pairs_node := cast(*Json_Node_Array) node;
-    for pairs_node.arr {
+    count: u64 = 0;
+    it := pairs_node.next_child;
+    while it != null {
         assert(it.type == .OBJECT);
-        pair_node := cast(*Json_Node_Object) it;
 
         get_member :: (member_name: string) -> float64 #expand {
             timer_start(*node_lookup_timer);
-            node, found := table_find(*pair_node.table, member_name);
+            found, node := find_node_by_name(it, member_name);
             assert(found && node.type == .NUMBER);
             timer_stop(*node_lookup_timer);
 
@@ -209,13 +208,15 @@ compute :: (input_filename: string) {
         timer_stop(*compute_timer);
 
         // print("Pair: % -> %\n", pair, haversine_distance);
+
+        count += 1;
+        it = it.next_sibling;
     }
 
     add_program_timing_segment_elapsed("json node lookup", node_lookup_timer.elapsed);
     add_program_timing_segment_elapsed("float parsing", float_parse_timer.elapsed);
     add_program_timing_segment_elapsed("compute", compute_timer.elapsed);
 
-    count := pairs_node.arr.count;
     average: float64 = sum / cast(float64)count;
     print("Average of % pairs: %\n", count, average);
 }

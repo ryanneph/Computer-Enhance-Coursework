@@ -284,7 +284,7 @@ token_to_value_node :: inline (token: *Token) -> *Json_Node {
 parse_tokens :: (tokens: [] *Token, iterative_token_cleanup := false) -> (root: *Json_Node) {
     if !tokens  return null;
 
-    throwaway_root: Json_Node_Array;
+    throwaway_root: Json_Node;
     throwaway_root.type = .ARRAY;
 
     stack: [..] *Json_Node;
@@ -313,139 +313,93 @@ parse_tokens :: (tokens: [] *Token, iterative_token_cleanup := false) -> (root: 
     token := tokens[0];
     while token {
         parent := peek(stack);
-        if parent.type == .ARRAY {
-            parent_array_node := cast(*Json_Node_Array) parent;
-
-            if token.type == .ARRAY_END {
-                debug_print("Ending array\n");
-
+        if parent.type == .ARRAY || parent.type == .OBJECT {
+            if token.type == .ARRAY_END || token.type == .OBJECT_END {
+                debug_print("Ending array/object\n");
                 pop(*stack);
                 token = next_token();
                 continue;
             }
 
             // enforce json format ","
-            if parent_array_node.arr.count {
+            if parent.next_child {
                 if token.type != .MEMBER_SEPARATOR {
-                    print("invalid token '%' following array member definition.\n", token.type);
+                    print("invalid token '%' following array/object member definition.\n", token.type);
                     return null;
                 } else {
                     token = next_token();
 
                     // catch trailing ","
-                    if token && token.type == .ARRAY_END {
+                    if token && (token.type == .ARRAY_END || token.type == .OBJECT_END) {
                         print("trailing ',' not allowed but found in array.\n");
                         return null;
                     }
                 }
             }
 
+            member_name_token: *Token = null;
+            if (parent.type == .OBJECT) {
+                // get the entry name string
+                if token.type != .STRING {
+                    print("Expected member name string but found token of type %\n", token.type);
+                    return null;
+                }
+                member_name_token = token;
+                debug_print("Found member name string: '%'\n", member_name_token.value_string);
+
+                // enforce json format ":"
+                token = next_token();
+                if !token || token.type != .OBJECT_NAME_VALUE_SEPARATOR {
+                    print("Expected ':' between name string and value for object member\n");
+                    return null;
+                }
+
+                token = next_token();
+                if !token {
+                    print("Expected value token but reached end-of-file.\n");
+                    return null;
+                }
+            }
+
             node := token_to_value_node(token);
             if node {
-                array_add(*parent_array_node.arr, node);
+                if member_name_token {
+                    assert(parent.type == .OBJECT);
+                    node.member_name = member_name_token.value_string;
+                }
+
+                if !parent.next_child {
+                    parent.next_child = node;
+                    parent.last_child = node;
+                } else {
+                    parent.last_child.next_sibling = node;
+                    parent.last_child = node;
+                }
                 debug_print("Added % to %: %\n", node.type, parent.type, <<node);
             } else {
                 if token.type == {
-                    case .OBJECT_BEGIN;
-                        node := New_Node(Json_Node_Object, .OBJECT);
-                        array_add(*parent_array_node.arr, node);
-                        debug_print("Added object to array: %\n", <<node);
-
-                        array_add(*stack, node);
-
+                    case .OBJECT_BEGIN; #through;
                     case .ARRAY_BEGIN;
-                        node := New_Node(Json_Node_Array, .ARRAY);
-                        array_add(*parent_array_node.arr, node);
-                        debug_print("Added array to array: %\n", <<node);
+                        node_type := ifx token.type == .OBJECT_BEGIN then Json_Node_Type.OBJECT else .ARRAY;
+                        node := New_Node(Json_Node, node_type);
+                        if member_name_token {
+                            assert(parent.type == .OBJECT);
+                            node.member_name = member_name_token.value_string;
+                        }
+                        debug_print("Added % to %: %\n", node.type, parent.type, <<node);
+
+                        if !parent.next_child {
+                            parent.next_child = node;
+                            parent.last_child = node;
+                        } else {
+                            parent.last_child.next_sibling = node;
+                            parent.last_child = node;
+                        }
 
                         array_add(*stack, node);
-
-                    case .OBJECT_END;
-                        print("Unexpected OBJECT_END token while processing open array.\n");
-                        return null;
 
                     case;
                         print("unhandled token type %\n", token.type);
-                }
-            }
-
-            token = next_token();
-        } else {
-            assert(parent.type == .OBJECT);
-            parent_object_node := cast(*Json_Node_Object) parent;
-
-            if token.type == .OBJECT_END {
-                debug_print("Ending object\n");
-
-                pop(*stack);
-                token = next_token();
-                continue;
-            }
-
-            // enforce json format ","
-            if parent_object_node.table.count {
-                if token.type != .MEMBER_SEPARATOR {
-                    print("invalid token '%' following object member definition.\n", token.type);
-                    return null;
-                } else {
-                    token = next_token();
-
-                    // catch trailing ","
-                    if token && token.type == .OBJECT_END {
-                        print("trailing ',' not allowed but found in array.\n");
-                        return null;
-                    }
-                }
-            }
-
-            // get the entry name string
-            if token.type != .STRING {
-                print("Expected member name string but found token of type %\n", token.type);
-                return null;
-            }
-            member_name_token := token;
-            debug_print("Found member name string: '%'\n", member_name_token.value_string);
-
-            // enforce json format ":"
-            token = next_token();
-            if !token || token.type != .OBJECT_NAME_VALUE_SEPARATOR {
-                print("Expected ':' between name string and value for object member\n");
-                return null;
-            }
-
-            token = next_token();
-            if !token {
-                print("Expected value token but reached end-of-file.\n");
-                return null;
-            }
-
-            node := token_to_value_node(token);
-            if node {
-                table_add(*parent_object_node.table, member_name_token.value_string, node);
-                debug_print("Added % to %: (\"%\": %)\n", node.type, parent.type, token.value_string, <<node);
-            } else {
-                if token.type == {
-                    case .OBJECT_BEGIN;
-                        node := New_Node(Json_Node_Object, .OBJECT);
-                        table_add(*parent_object_node.table, member_name_token.value_string, node);
-                        debug_print("Added % to %: (\"%\": %)\n", node.type, parent.type, token.value_string, <<node);
-
-                        array_add(*stack, node);
-
-                    case .ARRAY_BEGIN;
-                        node := New_Node(Json_Node_Array, .ARRAY);
-                        table_add(*parent_object_node.table, member_name_token.value_string, node);
-                        debug_print("Added % to %: (\"%\": %)\n", node.type, parent.type, token.value_string, <<node);
-
-                        array_add(*stack, node);
-
-                    case .ARRAY_END;
-                        print("Unexpected ARRAY_END token while processing open object.\n");
-                        return null;
-
-                    case;
-                        print("Unexpected token type %\n", token.type);
-                        return null;
                 }
             }
 
@@ -458,8 +412,7 @@ parse_tokens :: (tokens: [] *Token, iterative_token_cleanup := false) -> (root: 
         return null;
     }
 
-    assert(throwaway_root.arr.count == 1);
-    return throwaway_root.arr[0];
+    return throwaway_root.next_child;
 }
 
 
@@ -479,15 +432,14 @@ Json_Node_Type :: enum {
 Json_Node :: struct {
     type: Json_Node_Type;
     value_string: string;
-}
-// TODO(ryan): use linked list with one Json_Node type, instead of array/table members
-Json_Node_Object :: struct {
-    using #as base: Json_Node;
-    table: Table(string, *Json_Node);
-}
-Json_Node_Array :: struct {
-    using #as base: Json_Node;
-    arr: [..] *Json_Node;
+
+    next_sibling: *Json_Node;
+
+    next_child: *Json_Node;
+    last_child: *Json_Node;
+
+    // only used for OBJECT type
+    member_name: string;
 }
 
 // TODO(ryan): chunked linear allocator for all storage, free all on destruction.
@@ -545,18 +497,32 @@ free_memory :: (doc: Json_Document) {
 
         while stack.count {
             node := pop(*stack);
-
-            if node.type == .ARRAY {
-                array_node := cast(*Json_Node_Array)node;
-                for subnode: array_node.arr
-                    array_add(*stack, subnode);
-            } else if node.type == .OBJECT {
-                object_node := cast(*Json_Node_Object)node;
-                for subnode: object_node.table
-                    array_add(*stack, subnode);
+            if node.type == .ARRAY || node.type == .OBJECT {
+                it := node.next_child;
+                while it != null
+                    array_add(*stack, it);
             }
 
             free(node);
         }
     }
 }
+
+find_node_by_name :: (object_node: *Json_Node, name: string) -> (found: bool, node: *Json_Node) {
+    assert(object_node.type == .OBJECT);
+
+    found := false;
+    node: *Json_Node;
+    it := object_node.next_child;
+    while it != null {
+        if it.member_name == name {
+            found = true;
+            node = it;
+            break;
+        }
+        it = it.next_sibling;
+    }
+
+    return found, node;
+}
+
