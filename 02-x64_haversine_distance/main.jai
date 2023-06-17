@@ -151,8 +151,9 @@ generate :: (pair_count: u64) {
 compute :: (input_filename: string) {
     file_read_timer: Timer;
     json_parse_timer: Timer;
-    json_navigate_timer: Timer;
     compute_timer: Timer;
+    node_lookup_timer: Timer;
+    float_parse_timer: Timer;
 
     timer_start(*file_read_timer);
     json_string, read_success := read_entire_file(input_filename);
@@ -169,11 +170,9 @@ compute :: (input_filename: string) {
     timer_stop(*json_parse_timer);
     add_program_timing_segment_elapsed("parse json", json_parse_timer.elapsed);
 
-    timer_start(*json_navigate_timer);
     assert(json_doc.root.type == .OBJECT);
     node, found := table_find(*(cast(*Json_Node_Object)json_doc.root).table, "pairs");
     assert(found);
-    timer_stop(*json_navigate_timer);
 
     sum: float64 = 0.0;
     pairs_node := cast(*Json_Node_Array) node;
@@ -182,27 +181,27 @@ compute :: (input_filename: string) {
         pair_node := cast(*Json_Node_Object) it;
 
         get_member :: (member_name: string) -> float64 #expand {
+            timer_start(*node_lookup_timer);
             node, found := table_find(*pair_node.table, member_name);
             assert(found && node.type == .NUMBER);
+            timer_stop(*node_lookup_timer);
 
-            number_node := node;
-
-            float_value, success := parse_float(*node.value_string);
+            timer_start(*float_parse_timer);
+            float_value, success := string_to_float64(node.value_string);
             if !success {
                 print("Error parsing float from string '%'.\n", node.value_string);
                 float_value = 0.0;
             }
+            timer_stop(*float_parse_timer);
 
             return float_value;
         }
 
-        timer_start(*json_navigate_timer);
         pair: Point_Pair;
         pair.x0 = get_member("x0");
         pair.y0 = get_member("y0");
         pair.x1 = get_member("x1");
         pair.y1 = get_member("y1");
-        timer_stop(*json_navigate_timer);
 
         timer_start(*compute_timer);
         haversine_distance := reference_haversine(pair);
@@ -212,7 +211,8 @@ compute :: (input_filename: string) {
         // print("Pair: % -> %\n", pair, haversine_distance);
     }
 
-    add_program_timing_segment_elapsed("json navigation", json_navigate_timer.elapsed);
+    add_program_timing_segment_elapsed("json node lookup", node_lookup_timer.elapsed);
+    add_program_timing_segment_elapsed("float parsing", float_parse_timer.elapsed);
     add_program_timing_segment_elapsed("compute", compute_timer.elapsed);
 
     count := pairs_node.arr.count;
@@ -254,19 +254,23 @@ main :: () {
 
     if args.mode == {
         case "compute";
+            os_timer_start := read_os_timer();
             if !args.input.count {
                 args.input = "haversine_input.json";
                 print("'-input' not set, defaulting to '%'.\n", args.input);
             }
             compute(args.input);
+            os_timer_end := read_os_timer();
+
+            total_time := os_timer_end - os_timer_start;
+            print("Total Time: %ms\n", cast(float64) total_time / cast(float64) get_os_timer_freq() * 1000.0);
             summarize_program_timing();
 
         case "generate";
             if args.count <= 0 {
                 old_count := args.count;
                 args.count = 10;
-                print("invalid value for '-count': %. Using default: %.\n",
-                    old_count, args.count);
+                print("invalid value for '-count': %. Using default: %.\n", old_count, args.count);
             }
             generate(cast(u64) args.count);
 
