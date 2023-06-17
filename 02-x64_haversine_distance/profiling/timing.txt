@@ -1,0 +1,10 @@
+Average of 10000000 pairs: 10009.46495
+Total Time: 27524.112846ms
+Program Timing:
+  - read file: 1109349410 ticks (1.238176% of measured)
+  - json lexing: 45323119474 ticks (50.586403% of measured)
+  - json parsing: 12470018704 ticks (13.918137% of measured)
+  - json token cleanup: 203312439 ticks (0.226923% of measured)
+  - json node lookup: 3377209090 ticks (3.769398% of measured)
+  - float parsing: 17717241045 ticks (19.774709% of measured)
+  - compute: 9395208547 ticks (10.486255% of measured)
