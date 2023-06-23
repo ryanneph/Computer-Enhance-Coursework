@@ -46,15 +46,32 @@ calibrate_cpu_timer :: () {
     print("CPU   freq: % Gticks/sec (guessed)\n", cast(float64)cpu_freq / 1_000_000_000);
 }
 
-get_os_timer_freq :: inline () -> u64 {
-    return 1_000_000_000;
-}
+#if OS == .WINDOWS {
+    // TODO(ryan): Windows implementation is UNTESTED!
+    #import "Windows";
 
-read_os_timer :: () -> u64 {
-    now := current_time_monotonic();
-    now_ns, success := to_nanoseconds(now);
-    assert(success);
-    return cast(u64) now_ns;
+    get_os_timer_freq :: inline () -> u64 {
+        freq: s64;
+        success := ValueQueryPerformanceFrequency(*freq);
+        assert(success);
+        return cast(u64) freq;
+    }
+} else #if OS == .LINUX {
+    #import "POSIX";
+
+    get_os_timer_freq :: inline () -> u64 {
+        // fixed nanosecond output precision, but not guaranteed to be the sampling precision
+        return 1_000_000_000;
+    }
+
+    read_os_timer :: () -> u64 {
+        ts: timespec;
+        err: int = clock_gettime(CLOCK_MONOTONIC_RAW, *ts);
+        assert(!err);
+
+        now_ns: u64 = cast(u64)ts.tv_sec * 1_000_000_000 + cast(u64)ts.tv_nsec;
+        return now_ns;
+    }
 }
 
 read_cpu_timer :: inline () -> u64 {
