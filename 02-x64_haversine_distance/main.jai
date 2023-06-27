@@ -130,16 +130,15 @@ generate :: (pair_count: u64) {
             assert(written);
         }
 
-        count: u64 = xx pairs.count;
+        count: s64 = pairs.count;
         WRITE(count);
 
         for pair: pairs {
-            distance: float64 = dists[it_index];
+            WRITE(pair);
+        }
 
-            WRITE(pair.x0);
-            WRITE(pair.y0);
-            WRITE(pair.x1);
-            WRITE(pair.y1);
+        for pair: pairs {
+            distance: float64 = dists[it_index];
             WRITE(distance);
         }
 
@@ -148,7 +147,58 @@ generate :: (pair_count: u64) {
     }
 }
 
-compute :: (input_filename: string) {
+read_binary_data :: (filename: string) -> ([]Point_Pair, distances: []float64,  success: bool) {
+    file, ok := file_open(filename);
+    if !ok  return .[], .[], false;
+
+    READ_ONE :: ($T: Type) -> T #expand {
+        dest: T;
+        ok, bytes_read := file_read(file, *dest, size_of(T));
+        assert(ok && bytes_read == size_of(T));
+        return dest;
+    }
+    READ_MANY :: (dest: *$T, count: s64) #expand {
+        bytes_to_read := size_of(T) * count;
+        ok, bytes_read := file_read(file, dest, bytes_to_read);
+        assert(ok && bytes_read == bytes_to_read);
+    }
+
+    pair_count := READ_ONE(s64);
+    pairs     := NewArray(pair_count, Point_Pair, initialized = false);
+    distances := NewArray(pair_count, float64, initialized = false);
+
+    READ_MANY(cast(*Point_Pair)pairs.data, pair_count);
+    READ_MANY(cast(*float64)distances.data, pair_count);
+
+    return pairs, distances, true;
+}
+
+compute_from_binary :: (input_filename: string) {
+    file_read_timer: Timer;
+    compute_timer: Timer;
+
+    timer_start(*file_read_timer);
+    pairs, dists, ok := read_binary_data(input_filename);
+    if !ok {
+        print("failed to open binary data from file '%'\n", input_filename);
+        return;
+    }
+    timer_stop(*file_read_timer);
+    add_program_timing_segment_elapsed("read file", file_read_timer.elapsed);
+
+    print("Found % pairs in binary file '%'\n", pairs.count, input_filename);
+
+    timer_start(*compute_timer);
+    for pairs {
+        dist := reference_haversine(it);
+        error := (dist - dists[it_index]) / dists[it_index];
+        // print("% (actual: %, error=%0%%)\n", dist, dists[it_index], error * 100.0);
+    }
+    timer_stop(*compute_timer);
+    add_program_timing_segment_elapsed("compute", compute_timer.elapsed);
+}
+
+compute_from_json :: (input_filename: string) {
     file_read_timer: Timer;
     compute_timer: Timer;
     node_lookup_timer: Timer;
@@ -220,7 +270,7 @@ compute :: (input_filename: string) {
 arg_parse_flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED | .ALIGN_HELP;
 arg_parse_help_triggers :: string.["h", "help"];
 Program_Args :: struct {
-    mode: string;  @"?choose from {generate, compute, timing-summary}"
+    mode: string;  @"?choose from {generate, compute, compute-binary, timing-summary}"
     count: s64;    @"?generator output instance count"
     input: string; @"?json input filename"
 }
@@ -229,6 +279,8 @@ show_help_wrapper :: inline () {
 }
 
 summarize_program_timing :: () {
+    assert(program_timing.count > 0);
+
     total_elapsed: u64 = 0;
     for *program_timing
         total_elapsed += it.timer_elapsed;
@@ -251,16 +303,29 @@ main :: () {
 
     if args.mode == {
         case "compute";
-            os_timer_start := read_os_timer();
+            cpu_timer_start := read_cpu_timer();
             if !args.input.count {
                 args.input = "haversine_input.json";
                 print("'-input' not set, defaulting to '%'.\n", args.input);
             }
-            compute(args.input);
-            os_timer_end := read_os_timer();
+            compute_from_json(args.input);
+            cpu_timer_end := read_cpu_timer();
 
-            total_time := os_timer_end - os_timer_start;
-            print("Total Time: %ms\n", cast(float64) total_time / cast(float64) get_os_timer_freq() * 1000.0);
+            total_time := (cpu_timer_end - cpu_timer_start);
+            print("Total Time: %ms\n", cast(float64) total_time / cast(float64) get_cpu_timer_freq() * 1000.0);
+            summarize_program_timing();
+
+        case "compute-binary";
+            cpu_timer_start := read_cpu_timer();
+            if !args.input.count {
+                args.input = "haversine_reference.bin";
+                print("-input not set, defaulting to '%'.\n", args.input);
+            }
+            compute_from_binary(args.input);
+            cpu_timer_end := read_cpu_timer();
+
+            total_time := cpu_timer_end - cpu_timer_start;
+            print("Total Time: %ms\n", cast(float64) total_time / cast(float64) get_cpu_timer_freq() * 1000.0);
             summarize_program_timing();
 
         case "generate";
