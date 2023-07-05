@@ -5,34 +5,7 @@
 #import "Random";
 
 #load "json.jai";
-#load "timer.jai";
-
-Program_Timing_Segment :: struct {
-    desc: string;
-    timer_elapsed: u64;
-
-    percentage: float64;
-}
-program_timing: [..] Program_Timing_Segment;
-add_program_timing_segment_elapsed :: (desc: string, timer_elapsed: u64) {
-    segment: Program_Timing_Segment;
-    segment.desc = desc;
-    segment.timer_elapsed = timer_elapsed;
-
-    array_add(*program_timing, segment);
-}
-
-Timer :: struct {
-    start: u64;
-    elapsed: u64;
-}
-timer_start :: inline (timer: *Timer) {
-    timer.start = read_cpu_timer();
-}
-timer_stop :: inline (timer: *Timer) {
-    timer_stop := read_cpu_timer();
-    timer.elapsed += timer_stop - timer.start;
-}
+#load "profile.jai";
 
 Point_Pair :: struct {
     x0, y0: float64;
@@ -148,6 +121,8 @@ generate :: (pair_count: u64) {
 }
 
 read_binary_data :: (filename: string) -> ([]Point_Pair, distances: []float64,  success: bool) {
+    time_block("read binary data file");
+
     file, ok := file_open(filename);
     if !ok  return .[], .[], false;
 
@@ -174,41 +149,36 @@ read_binary_data :: (filename: string) -> ([]Point_Pair, distances: []float64,  
 }
 
 compute_from_binary :: (input_filename: string) {
-    file_read_timer: Timer;
-    compute_timer: Timer;
-
-    timer_start(*file_read_timer);
     pairs, dists, ok := read_binary_data(input_filename);
     if !ok {
         print("failed to open binary data from file '%'\n", input_filename);
         return;
     }
-    timer_stop(*file_read_timer);
-    add_program_timing_segment_elapsed("read file", file_read_timer.elapsed);
 
     print("Found % pairs in binary file '%'\n", pairs.count, input_filename);
 
-    timer_start(*compute_timer);
-    for pairs {
-        dist := reference_haversine(it);
-        error := (dist - dists[it_index]) / dists[it_index];
-        // print("% (actual: %, error=%0%%)\n", dist, dists[it_index], error * 100.0);
+    {
+        time_block("compute");
+        for pairs {
+            dist := reference_haversine(it);
+            error := (dist - dists[it_index]) / dists[it_index];
+            // print("% (actual: %, error=%0%%)\n", dist, dists[it_index], error * 100.0);
+        }
     }
-    timer_stop(*compute_timer);
-    add_program_timing_segment_elapsed("compute", compute_timer.elapsed);
 }
 
 compute_from_json :: (input_filename: string) {
-    file_read_timer: Timer;
     compute_timer: Timer;
     node_lookup_timer: Timer;
     float_parse_timer: Timer;
 
-    timer_start(*file_read_timer);
-    json_string, read_success := read_entire_file(input_filename);
-    assert(read_success);
-    timer_stop(*file_read_timer);
-    add_program_timing_segment_elapsed("read file", file_read_timer.elapsed);
+    json_string: string;
+    {
+        time_block("read file");
+        read_success: bool;
+        json_string, read_success = read_entire_file(input_filename);
+        assert(read_success);
+    }
 
     json_doc, parse_success := parse_json(json_string);
     if !parse_success {
@@ -278,21 +248,6 @@ show_help_wrapper :: inline () {
     show_help(Program_Args, arg_parse_flags, arg_parse_help_triggers);
 }
 
-summarize_program_timing :: () {
-    assert(program_timing.count > 0);
-
-    total_elapsed: u64 = 0;
-    for *program_timing
-        total_elapsed += it.timer_elapsed;
-    for *program_timing
-        it.percentage = 100.0 * cast(float64) it.timer_elapsed / cast(float64) total_elapsed;
-
-    print("Program Timing:\n");
-    for program_timing {
-        print("  - %: % ticks (%0%% of measured)\n", it.desc, it.timer_elapsed, it.percentage);
-    }
-}
-
 main :: () {
     success, args, is_set, free_args := parse_arguments(Program_Args, arg_parse_flags, arg_parse_help_triggers);
     if !args.mode.count {
@@ -301,32 +256,21 @@ main :: () {
         exit(1);
     }
 
+    cpu_timer_start := read_cpu_timer();
     if args.mode == {
         case "compute";
-            cpu_timer_start := read_cpu_timer();
             if !args.input.count {
                 args.input = "haversine_input.json";
                 print("'-input' not set, defaulting to '%'.\n", args.input);
             }
             compute_from_json(args.input);
-            cpu_timer_end := read_cpu_timer();
-
-            total_time := (cpu_timer_end - cpu_timer_start);
-            print("Total Time: %ms\n", cast(float64) total_time / cast(float64) get_cpu_timer_freq() * 1000.0);
-            summarize_program_timing();
 
         case "compute-binary";
-            cpu_timer_start := read_cpu_timer();
             if !args.input.count {
                 args.input = "haversine_reference.bin";
                 print("-input not set, defaulting to '%'.\n", args.input);
             }
             compute_from_binary(args.input);
-            cpu_timer_end := read_cpu_timer();
-
-            total_time := cpu_timer_end - cpu_timer_start;
-            print("Total Time: %ms\n", cast(float64) total_time / cast(float64) get_cpu_timer_freq() * 1000.0);
-            summarize_program_timing();
 
         case "generate";
             if args.count <= 0 {
@@ -343,5 +287,12 @@ main :: () {
         case;
             print("invalid value for '-mode': '%'.\n", args.mode);
             exit(1);
+    }
+
+    if args.mode == "compute" || args.mode == "compute-binary" {
+        cpu_timer_end := read_cpu_timer();
+        total_time := cpu_timer_end - cpu_timer_start;
+        print("Total Time: %ms\n", cast(float64) total_time / cast(float64) get_cpu_timer_freq() * 1000.0);
+        summarize_program_timing();
     }
 }

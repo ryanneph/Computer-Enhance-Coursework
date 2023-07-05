@@ -43,6 +43,8 @@ Token :: struct {
 }
 
 lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, success: bool) {
+    time_block("json lexing");
+
     cursor: s64 = 0;
     level: s64 = 0;
     tokens: [..]Token;
@@ -257,6 +259,8 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, succes
 }
 
 parse_tokens :: (tokens: []Token) -> (root: *Json_Node) {
+    time_block("json parsing");
+
     if !tokens  return null;
 
     throwaway_root: Json_Node;
@@ -425,28 +429,21 @@ Json_Document :: struct {
 }
 
 parse_json :: (json_string: string, debug_output := false) -> (Json_Document, success: bool) {
-    json_lex_timer: Timer;
-    json_parse_timer: Timer;
-    json_token_cleanup_timer: Timer;
-
     print_debug_output = debug_output;
 
-    timer_start(*json_lex_timer);
     tokens, lex_success := lex(json_string);
     if (!lex_success) {
         print("Failed lexing json\n");
         return .{}, false;
     }
-    timer_stop(*json_lex_timer);
 
     // TODO(ryan): lex tokens during json parsing as needed.
-    timer_start(*json_parse_timer);
     root_node := parse_tokens(tokens);
-    timer_stop(*json_parse_timer);
 
-    timer_start(*json_token_cleanup_timer);
-    array_free(tokens);
-    timer_stop(*json_token_cleanup_timer);
+    {
+        time_block("json token cleanup");
+        array_free(tokens);
+    }
 
     if !root_node {
         print("Failed parsing json\n");
@@ -456,10 +453,6 @@ parse_json :: (json_string: string, debug_output := false) -> (Json_Document, su
     doc: Json_Document;
     doc.root = root_node;
     doc._allocator = context.allocator;
-
-    add_program_timing_segment_elapsed("json lexing", json_lex_timer.elapsed);
-    add_program_timing_segment_elapsed("json parsing", json_parse_timer.elapsed);
-    add_program_timing_segment_elapsed("json token cleanup", json_token_cleanup_timer.elapsed);
 
     return doc, true;
 }
