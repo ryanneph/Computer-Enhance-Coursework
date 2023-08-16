@@ -215,7 +215,7 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, succes
 
         print("Unexpected Char: '");
         print_character(char);
-        print("'\n", char);
+        print("'\n");
         error_found = true;
         break;
     }
@@ -387,7 +387,7 @@ parse_tokens :: (tokens: []Token) -> (root: *Json_Node) {
     }
 
     if token_index < tokens.count {
-        print("% tokens remain after parsing.\n");
+        print("% tokens remain after parsing.\n", tokens.count - token_index);
         return null;
     }
 
