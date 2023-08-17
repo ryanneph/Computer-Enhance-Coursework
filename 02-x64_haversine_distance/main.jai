@@ -121,7 +121,7 @@ generate :: (pair_count: u64) {
 }
 
 read_binary_data :: (filename: string) -> ([]Point_Pair, distances: []float64,  success: bool) {
-    time_block("read binary data file");
+    profile_block("read binary data file");
 
     file, ok := file_open(filename);
     if !ok  return .[], .[], false;
@@ -158,7 +158,7 @@ compute_from_binary :: (input_filename: string) {
     print("Found % pairs in binary file '%'\n", pairs.count, input_filename);
 
     {
-        time_block("compute");
+        profile_block("compute");
         for pairs {
             dist := reference_haversine(it);
             error := (dist - dists[it_index]) / dists[it_index];
@@ -168,13 +168,12 @@ compute_from_binary :: (input_filename: string) {
 }
 
 compute_from_json :: (input_filename: string) {
-    compute_timer: Timer;
-    node_lookup_timer: Timer;
-    float_parse_timer: Timer;
+    segment_node_lookup := profile_segment_init("json node lookup");
+    segment_float_parsing := profile_segment_init("float parsing");
 
     json_string: string;
     {
-        time_block("read file");
+        profile_block("read file");
         read_success: bool;
         json_string, read_success = read_entire_file(input_filename);
         assert(read_success);
@@ -196,18 +195,18 @@ compute_from_json :: (input_filename: string) {
         assert(it.type == .OBJECT);
 
         get_member :: (member_name: string) -> float64 #expand {
-            timer_start(*node_lookup_timer);
+            profile_segment_start(segment_node_lookup);
             found, node := find_node_by_name(it, member_name);
             assert(found && node.type == .NUMBER);
-            timer_stop(*node_lookup_timer);
+            profile_segment_stop(segment_node_lookup);
 
-            timer_start(*float_parse_timer);
+            profile_segment_start(segment_float_parsing);
             float_value, success := string_to_float64(node.value_string);
             if !success {
                 print("Error parsing float from string '%'.\n", node.value_string);
                 float_value = 0.0;
             }
-            timer_stop(*float_parse_timer);
+            profile_segment_stop(segment_float_parsing);
 
             return float_value;
         }
@@ -218,20 +217,17 @@ compute_from_json :: (input_filename: string) {
         pair.x1 = get_member("x1");
         pair.y1 = get_member("y1");
 
-        timer_start(*compute_timer);
-        haversine_distance := reference_haversine(pair);
-        sum += haversine_distance;
-        timer_stop(*compute_timer);
+        {
+            profile_block("compute");
+            haversine_distance := reference_haversine(pair);
+            sum += haversine_distance;
+        }
 
         // print("Pair: % -> %\n", pair, haversine_distance);
 
         count += 1;
         it = it.next_sibling;
     }
-
-    add_program_timing_segment_elapsed("json node lookup", node_lookup_timer.elapsed);
-    add_program_timing_segment_elapsed("float parsing", float_parse_timer.elapsed);
-    add_program_timing_segment_elapsed("compute", compute_timer.elapsed);
 
     average: float64 = sum / cast(float64)count;
     print("Average of % pairs: %\n", count, average);
@@ -256,7 +252,7 @@ main :: () {
         exit(1);
     }
 
-    cpu_timer_start := read_cpu_timer();
+    profiler_begin();
     if args.mode == {
         case "compute";
             if !args.input.count {
@@ -290,9 +286,6 @@ main :: () {
     }
 
     if args.mode == "compute" || args.mode == "compute-binary" {
-        cpu_timer_end := read_cpu_timer();
-        total_time := cpu_timer_end - cpu_timer_start;
-        print("Total Time: %ms\n", cast(float64) total_time / cast(float64) get_cpu_timer_freq() * 1000.0);
-        summarize_program_timing();
+        profiler_end_and_summarize();
     }
 }

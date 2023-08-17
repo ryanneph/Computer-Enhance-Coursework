@@ -43,7 +43,7 @@ Token :: struct {
 }
 
 lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, success: bool) {
-    time_block("json lexing");
+    profile_block("json lexing");
 
     cursor: s64 = 0;
     level: s64 = 0;
@@ -259,7 +259,7 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, succes
 }
 
 parse_tokens :: (tokens: []Token) -> (root: *Json_Node) {
-    time_block("json parsing");
+    profile_block("json parsing");
 
     if !tokens  return null;
 
@@ -441,7 +441,7 @@ parse_json :: (json_string: string, debug_output := false) -> (Json_Document, su
     root_node := parse_tokens(tokens);
 
     {
-        time_block("json token cleanup");
+        profile_block("json token cleanup");
         array_free(tokens);
     }
 
