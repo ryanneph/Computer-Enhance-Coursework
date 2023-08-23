@@ -91,6 +91,7 @@ generate :: (pair_count: u64) {
 
     json_output_file := "haversine_input.json";
     write_entire_file(json_output_file, json_string);
+    print("Generated % pairs and saved to file '%'\n", pairs.count, json_output_file);
 
     // binary encoding
     {
