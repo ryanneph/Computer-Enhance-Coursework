@@ -30,23 +30,6 @@ profile_get_unique_index :: () -> u64 {
 
 
 #scope_export
-profile_block :: (label: string, loc := #caller_location) #expand {
-    index: u64 : #run profile_get_unique_index();
-    entry := *entries[index];
-    entry.label = label;
-
-    entry.start_tsc = read_cpu_timer();
-    `defer {
-        duration := read_cpu_timer() - entry.start_tsc;
-        entry.tsc_elapsed += duration;
-        entry.hit_count += 1;
-    }
-}
-
-profile_function :: (loc := #caller_location) #expand {
-    profile_block(#procedure_name(), loc);
-}
-
 Profile_Segment :: *void;
 profile_segment_init :: (label: string, loc := #caller_location) -> (profile_entry_handle: Profile_Segment) #expand {
     index: u64 : #run profile_get_unique_index();
@@ -74,6 +57,16 @@ profile_segment_stop :: (profile_segment: Profile_Segment) {
     duration := read_cpu_timer() - entry.start_tsc;
     entry.tsc_elapsed += duration;
     entry.hit_count += 1;
+}
+
+profile_block :: (label: string, loc := #caller_location) #expand {
+    segment := profile_segment_init(label, loc);
+    profile_segment_start(segment);
+    `defer profile_segment_stop(segment);
+}
+
+profile_function :: (loc := #caller_location) #expand {
+    profile_block(#procedure_name(), loc);
 }
 
 profiler_begin :: () {
