@@ -11,8 +11,13 @@ Profile_Entry :: struct {
 
     started: bool;
     start_tsc: u64;
+
+    // handle nested entries
+    parent_entry: *Profile_Entry;
+    children_tsc_elapsed: u64;
 }
 global_profiler: Profiler;
+latest_entry: *Profile_Entry = null;
 
 entries: [1024]Profile_Entry;
 #no_reset entry_count: u64 = 0;
@@ -46,6 +51,8 @@ profile_segment_start :: (profile_segment: Profile_Segment) {
     entry.started = true;
 
     entry.start_tsc = read_cpu_timer();
+    entry.parent_entry = latest_entry;
+    latest_entry = entry;
 }
 
 profile_segment_stop :: (profile_segment: Profile_Segment) {
@@ -57,6 +64,10 @@ profile_segment_stop :: (profile_segment: Profile_Segment) {
     duration := read_cpu_timer() - entry.start_tsc;
     entry.tsc_elapsed += duration;
     entry.hit_count += 1;
+
+    if entry.parent_entry
+        entry.parent_entry.children_tsc_elapsed += duration;
+    latest_entry = entry.parent_entry;
 }
 
 profile_block :: (label: string, loc := #caller_location) #expand {
@@ -87,11 +98,20 @@ profiler_end_and_summarize :: () {
         entry := *entries[index];
         if entry.tsc_elapsed == 0  continue;
 
-        assert(unmeasured >= entry.tsc_elapsed);
-        unmeasured -= entry.tsc_elapsed;
+        duration := entry.tsc_elapsed - entry.children_tsc_elapsed;
 
-        percentage := 100.0 * cast(float64) entry.tsc_elapsed / cast(float64) total_elapsed;
-        print("  - %: % ticks (%0%% of measured) (% hits)\n", entry.label, entry.tsc_elapsed, percentage, entry.hit_count);
+        assert(unmeasured >= duration);
+        unmeasured -= duration;
+
+        percentage := 100.0 * cast(float64) duration / cast(float64) total_elapsed;
+        print("  - %: % ticks (%0%% of measured; % hits)", entry.label, duration, percentage, entry.hit_count);
+        if entry.parent_entry
+            print(" (parent: %)", entry.parent_entry.label);
+        if entry.children_tsc_elapsed {
+            percentage := 100.0 * cast(float64) entry.tsc_elapsed / cast(float64) total_elapsed;
+            print(", w/ children: % ticks (%0%% of measured)", entry.tsc_elapsed, percentage);
+        }
+        print("\n");
     }
 
     if (unmeasured > 0) {

@@ -180,10 +180,15 @@ compute_from_json :: (input_filename: string) {
         assert(read_success);
     }
 
-    json_doc, parse_success := parse_json(json_string);
-    if !parse_success {
-        print("failed to parse json: '%'\n", input_filename);
-        return;
+    json_doc: Json_Document;
+    parse_success: bool;
+    {
+        profile_block("all json processing");
+        json_doc, parse_success = parse_json(json_string);
+        if !parse_success {
+            print("failed to parse json: '%'\n", input_filename);
+            return;
+        }
     }
 
     found, pairs_node := find_node_by_name(json_doc.root, "pairs");
