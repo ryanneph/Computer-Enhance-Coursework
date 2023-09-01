@@ -6,18 +6,12 @@ Profiler :: struct {
 }
 Profile_Entry :: struct {
     tsc_elapsed: u64;
+    children_tsc_elapsed: u64;
     hit_count: u64;
     label: string;
-
-    started: bool;
-    start_tsc: u64;
-
-    // handle nested entries
-    parent_entry: *Profile_Entry;
-    children_tsc_elapsed: u64;
 }
 global_profiler: Profiler;
-latest_entry: *Profile_Entry = null;
+latest_parent_index: s64 = -1;
 
 entries: [1024]Profile_Entry;
 #no_reset entry_count: u64 = 0;
@@ -34,50 +28,67 @@ profile_get_unique_index :: () -> u64 {
 }
 
 
+// locally scoped instance of a globally stored Profile_Entry
+Profile_Block :: struct {
+    entry_index: u64;
+    label: string;
+
+    started: bool;
+    start_tsc: u64;
+
+    // handle nested blocks
+    parent_entry_index: s64;
+}
+
 #scope_export
-Profile_Segment :: *void;
-profile_segment_init :: (label: string, loc := #caller_location) -> (profile_entry_handle: Profile_Segment) #expand {
+profile_block_init :: (label: string, loc := #caller_location) -> Profile_Block #expand {
     index: u64 : #run profile_get_unique_index();
-    entry := *entries[index];
-    entry.label = label;
 
-    return cast(Profile_Segment)entry;
+    block: Profile_Block;
+    block.entry_index = index;
+    block.label = label;
+
+    return block;
 }
 
-profile_segment_start :: (profile_segment: Profile_Segment) {
-    entry := cast(*Profile_Entry) profile_segment;
+profile_block_start :: (block: *Profile_Block) {
+    assert(!block.started);
+    block.started = true;
 
-    assert(!entry.started);
-    entry.started = true;
-
-    entry.start_tsc = read_cpu_timer();
-    entry.parent_entry = latest_entry;
-    latest_entry = entry;
+    block.start_tsc = read_cpu_timer();
+    block.parent_entry_index = latest_parent_index;
+    latest_parent_index = cast(s64) block.entry_index;
 }
 
-profile_segment_stop :: (profile_segment: Profile_Segment) {
-    entry := cast(*Profile_Entry) profile_segment;
+profile_block_stop :: (block: *Profile_Block) {
+    assert(block.entry_index < entry_count);
+    entry := *entries[block.entry_index];
 
-    assert(entry.started);
-    entry.started = false;
+    assert(block.started);
+    block.started = false;
 
-    duration := read_cpu_timer() - entry.start_tsc;
+    duration := read_cpu_timer() - block.start_tsc;
     entry.tsc_elapsed += duration;
     entry.hit_count += 1;
+    entry.label = block.label;
 
-    if entry.parent_entry
-        entry.parent_entry.children_tsc_elapsed += duration;
-    latest_entry = entry.parent_entry;
+    if block.parent_entry_index >= 0 {
+        parent_entry := *entries[block.parent_entry_index];
+        parent_entry.children_tsc_elapsed += duration;
+    }
+    latest_parent_index = block.parent_entry_index;
 }
 
 profile_block :: (label: string, loc := #caller_location) #expand {
-    segment := profile_segment_init(label, loc);
-    profile_segment_start(segment);
-    `defer profile_segment_stop(segment);
+    block := profile_block_init(label, loc);
+    profile_block_start(*block);
+    `defer profile_block_stop(*block);
 }
 
 profile_function :: (loc := #caller_location) #expand {
-    profile_block(#procedure_name(), loc);
+    block := profile_block_init(#procedure_name(), loc);
+    profile_block_start(*block);
+    `defer profile_block_stop(*block);
 }
 
 profiler_begin :: () {
@@ -86,15 +97,13 @@ profiler_begin :: () {
 }
 
 profiler_end_and_summarize :: () {
-    assert(entry_count > 0);
-
     using global_profiler;
     total_elapsed := read_cpu_timer() - start_tsc;
     unmeasured := total_elapsed;
 
     print("Profiler Summary (total: % ticks; %s):\n", total_elapsed,
         cast(float64)total_elapsed / cast(float64)get_cpu_timer_freq());
-    for index : 0..entry_count-1 {
+    if entry_count for index : 0..entry_count-1 {
         entry := *entries[index];
         if entry.tsc_elapsed == 0  continue;
 
@@ -105,8 +114,6 @@ profiler_end_and_summarize :: () {
 
         percentage := 100.0 * cast(float64) duration / cast(float64) total_elapsed;
         print("  - %: % ticks (%0%% of measured; % hits)", entry.label, duration, percentage, entry.hit_count);
-        if entry.parent_entry
-            print(" (parent: %)", entry.parent_entry.label);
         if entry.children_tsc_elapsed {
             percentage := 100.0 * cast(float64) entry.tsc_elapsed / cast(float64) total_elapsed;
             print(", w/ children: % ticks (%0%% of measured)", entry.tsc_elapsed, percentage);

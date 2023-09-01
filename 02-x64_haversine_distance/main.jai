@@ -169,8 +169,8 @@ compute_from_binary :: (input_filename: string) {
 }
 
 compute_from_json :: (input_filename: string) {
-    segment_node_lookup := profile_segment_init("json node lookup");
-    segment_float_parsing := profile_segment_init("float parsing");
+    block_node_lookup := profile_block_init("json node lookup");
+    block_float_parsing := profile_block_init("float parsing");
 
     json_string: string;
     {
@@ -201,18 +201,18 @@ compute_from_json :: (input_filename: string) {
         assert(it.type == .OBJECT);
 
         get_member :: (member_name: string) -> float64 #expand {
-            profile_segment_start(segment_node_lookup);
+            profile_block_start(*block_node_lookup);
             found, node := find_node_by_name(it, member_name);
             assert(found && node.type == .NUMBER);
-            profile_segment_stop(segment_node_lookup);
+            profile_block_stop(*block_node_lookup);
 
-            profile_segment_start(segment_float_parsing);
+            profile_block_start(*block_float_parsing);
             float_value, success := string_to_float64(node.value_string);
             if !success {
                 print("Error parsing float from string '%'.\n", node.value_string);
                 float_value = 0.0;
             }
-            profile_segment_stop(segment_float_parsing);
+            profile_block_stop(*block_float_parsing);
 
             return float_value;
         }
