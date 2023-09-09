@@ -5,9 +5,8 @@ Profiler :: struct {
     start_tsc: u64;
 }
 Profile_Entry :: struct {
-    tsc_elapsed_at_root: u64;
-    tsc_elapsed: u64;
-    children_tsc_elapsed: u64;
+    tsc_elapsed_inclusive: u64;
+    tsc_elapsed_exclusive: u64;
     hit_count: u64;
     label: string;
 }
@@ -36,7 +35,7 @@ Profile_Block :: struct {
 
     started: bool;
     start_tsc: u64;
-    old_tsc_elapsed_at_root: u64; // remember at block open for recursive handling
+    old_tsc_elapsed_inclusive: u64; // remember at block open for recursive handling
 
     // handle nested blocks
     parent_entry_index: s64;
@@ -58,7 +57,7 @@ profile_block_start :: (block: *Profile_Block) {
     block.started = true;
 
     entry := *entries[block.entry_index];
-    block.old_tsc_elapsed_at_root = entry.tsc_elapsed_at_root;
+    block.old_tsc_elapsed_inclusive = entry.tsc_elapsed_inclusive;
 
     block.start_tsc = read_cpu_timer();
     block.parent_entry_index = latest_parent_index;
@@ -73,15 +72,17 @@ profile_block_stop :: (block: *Profile_Block) {
     block.started = false;
 
     duration := read_cpu_timer() - block.start_tsc;
-    entry.tsc_elapsed += duration;
-    entry.tsc_elapsed_at_root = block.old_tsc_elapsed_at_root + duration;
+    entry.tsc_elapsed_exclusive += duration;
+    entry.tsc_elapsed_inclusive = block.old_tsc_elapsed_inclusive + duration;
     entry.hit_count += 1;
     entry.label = block.label;
 
+    // TODO(ryan): reserve block 0 to avoid the branch and always have a valid parent
     if block.parent_entry_index >= 0 {
         parent_entry := *entries[block.parent_entry_index];
-        parent_entry.children_tsc_elapsed += duration;
+        parent_entry.tsc_elapsed_exclusive -= duration;
     }
+
     latest_parent_index = block.parent_entry_index;
 }
 
@@ -111,18 +112,18 @@ profiler_end_and_summarize :: () {
         cast(float64)total_elapsed / cast(float64)get_cpu_timer_freq());
     if entry_count for index : 0..entry_count-1 {
         entry := *entries[index];
-        if entry.tsc_elapsed == 0  continue;
+        if entry.tsc_elapsed_exclusive == 0  continue;
 
-        duration := entry.tsc_elapsed - entry.children_tsc_elapsed;
+        duration := entry.tsc_elapsed_exclusive;
 
         assert(unmeasured >= duration);
         unmeasured -= duration;
 
         percentage := 100.0 * cast(float64) duration / cast(float64) total_elapsed;
         print("  - %: % ticks (%0%% of measured; % hits)", entry.label, duration, percentage, entry.hit_count);
-        if entry.tsc_elapsed_at_root != duration {
-            percentage := 100.0 * cast(float64) entry.tsc_elapsed_at_root / cast(float64) total_elapsed;
-            print(", w/ children: % ticks (%0%% of measured)", entry.tsc_elapsed_at_root, percentage);
+        if entry.tsc_elapsed_inclusive != duration {
+            percentage := 100.0 * cast(float64) entry.tsc_elapsed_inclusive / cast(float64) total_elapsed;
+            print(", w/ children: % ticks (%0%% of measured)", entry.tsc_elapsed_inclusive, percentage);
         }
         print("\n");
     }
