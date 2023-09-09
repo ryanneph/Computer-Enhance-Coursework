@@ -5,6 +5,7 @@ Profiler :: struct {
     start_tsc: u64;
 }
 Profile_Entry :: struct {
+    tsc_elapsed_at_root: u64;
     tsc_elapsed: u64;
     children_tsc_elapsed: u64;
     hit_count: u64;
@@ -35,6 +36,7 @@ Profile_Block :: struct {
 
     started: bool;
     start_tsc: u64;
+    old_tsc_elapsed_at_root: u64; // remember at block open for recursive handling
 
     // handle nested blocks
     parent_entry_index: s64;
@@ -55,6 +57,9 @@ profile_block_start :: (block: *Profile_Block) {
     assert(!block.started);
     block.started = true;
 
+    entry := *entries[block.entry_index];
+    block.old_tsc_elapsed_at_root = entry.tsc_elapsed_at_root;
+
     block.start_tsc = read_cpu_timer();
     block.parent_entry_index = latest_parent_index;
     latest_parent_index = cast(s64) block.entry_index;
@@ -69,6 +74,7 @@ profile_block_stop :: (block: *Profile_Block) {
 
     duration := read_cpu_timer() - block.start_tsc;
     entry.tsc_elapsed += duration;
+    entry.tsc_elapsed_at_root = block.old_tsc_elapsed_at_root + duration;
     entry.hit_count += 1;
     entry.label = block.label;
 
@@ -114,9 +120,9 @@ profiler_end_and_summarize :: () {
 
         percentage := 100.0 * cast(float64) duration / cast(float64) total_elapsed;
         print("  - %: % ticks (%0%% of measured; % hits)", entry.label, duration, percentage, entry.hit_count);
-        if entry.children_tsc_elapsed {
-            percentage := 100.0 * cast(float64) entry.tsc_elapsed / cast(float64) total_elapsed;
-            print(", w/ children: % ticks (%0%% of measured)", entry.tsc_elapsed, percentage);
+        if entry.tsc_elapsed_at_root != duration {
+            percentage := 100.0 * cast(float64) entry.tsc_elapsed_at_root / cast(float64) total_elapsed;
+            print(", w/ children: % ticks (%0%% of measured)", entry.tsc_elapsed_at_root, percentage);
         }
         print("\n");
     }
