@@ -1,6 +1,16 @@
 #load "timing.jai";
 
 #scope_file
+
+#import "Compiler";
+PROFILER_DEBUG :: #run -> bool {
+    // NOTE(ryan): as of jai "beta 0.1.063, built on 12 May 2023", this is a robust test of `-release` during build,
+    // but it may not stay that way!
+    options := get_build_options();
+    is_debug := options.array_bounds_check != .OFF;
+    return is_debug;
+};
+
 Profiler :: struct {
     start_tsc: u64;
 }
@@ -34,12 +44,14 @@ Profile_Block :: struct {
     entry_index: u64;
     label: string;
 
-    started: bool;
     start_tsc: u64;
     old_tsc_elapsed_inclusive: u64; // remember at block open for recursive handling
 
     // handle nested blocks
     parent_entry_index: s64;
+
+#if PROFILER_DEBUG
+    started: bool;
 }
 
 #scope_export
@@ -54,8 +66,10 @@ profile_block_init :: (label: string, loc := #caller_location) -> Profile_Block 
 }
 
 profile_block_start :: (block: *Profile_Block) {
-    assert(!block.started);
-    block.started = true;
+    #if PROFILER_DEBUG {
+        assert(!block.started);
+        block.started = true;
+    }
 
     entry := *entries[block.entry_index];
     block.old_tsc_elapsed_inclusive = entry.tsc_elapsed_inclusive;
@@ -72,8 +86,10 @@ profile_block_stop :: (block: *Profile_Block) {
     parent_entry := *entries[block.parent_entry_index];
     entry        := *entries[block.entry_index];
 
-    assert(block.started);
-    block.started = false;
+    #if PROFILER_DEBUG {
+        assert(block.started);
+        block.started = false;
+    }
 
     parent_entry.tsc_elapsed_exclusive -= duration;
     entry.tsc_elapsed_exclusive += duration;
