@@ -11,18 +11,19 @@ Profile_Entry :: struct {
     label: string;
 }
 global_profiler: Profiler;
-latest_parent_index: s64 = -1;
+latest_parent_index: s64;
 
+// NOTE(ryan): entries[0] reserved to avoid branching for root-level profile blocks
 entries: [1024]Profile_Entry;
-#no_reset entry_count: u64 = 0;
+#no_reset next_entry_index: u64 = 1;
 profile_get_unique_index :: () -> u64 {
     // called at compile-time to retrieve the same entry for each call from a particular location
     // so that looping calls can aggregate into the same entry.
     assert(#compile_time);
-    assert(entry_count < entries.count);
+    assert(next_entry_index < entries.count-1);
 
-    index := entry_count;
-    entry_count += 1;
+    index := next_entry_index;
+    next_entry_index += 1;
 
     return index;
 }
@@ -65,25 +66,20 @@ profile_block_start :: (block: *Profile_Block) {
 }
 
 profile_block_stop :: (block: *Profile_Block) {
-    assert(block.entry_index < entry_count);
-    entry := *entries[block.entry_index];
+    latest_parent_index = block.parent_entry_index;
+    duration := read_cpu_timer() - block.start_tsc;
+
+    parent_entry := *entries[block.parent_entry_index];
+    entry        := *entries[block.entry_index];
 
     assert(block.started);
     block.started = false;
 
-    duration := read_cpu_timer() - block.start_tsc;
+    parent_entry.tsc_elapsed_exclusive -= duration;
     entry.tsc_elapsed_exclusive += duration;
-    entry.tsc_elapsed_inclusive = block.old_tsc_elapsed_inclusive + duration;
+    entry.tsc_elapsed_inclusive  = block.old_tsc_elapsed_inclusive + duration;
     entry.hit_count += 1;
     entry.label = block.label;
-
-    // TODO(ryan): reserve block 0 to avoid the branch and always have a valid parent
-    if block.parent_entry_index >= 0 {
-        parent_entry := *entries[block.parent_entry_index];
-        parent_entry.tsc_elapsed_exclusive -= duration;
-    }
-
-    latest_parent_index = block.parent_entry_index;
 }
 
 profile_block :: (label: string, loc := #caller_location) #expand {
@@ -110,20 +106,21 @@ profiler_end_and_summarize :: () {
 
     print("Profiler Summary (total: % ticks; %s):\n", total_elapsed,
         cast(float64)total_elapsed / cast(float64)get_cpu_timer_freq());
-    if entry_count for index : 0..entry_count-1 {
+    for index : 1..next_entry_index-1 {
         entry := *entries[index];
-        if entry.tsc_elapsed_exclusive == 0  continue;
+        if entry.tsc_elapsed_inclusive == 0  continue;
 
-        duration := entry.tsc_elapsed_exclusive;
+        inclusive := entry.tsc_elapsed_inclusive;
+        exclusive := entry.tsc_elapsed_exclusive;
 
-        assert(unmeasured >= duration);
-        unmeasured -= duration;
+        assert(unmeasured >= exclusive);
+        unmeasured -= exclusive;
 
-        percentage := 100.0 * cast(float64) duration / cast(float64) total_elapsed;
-        print("  - %: % ticks (%0%% of measured; % hits)", entry.label, duration, percentage, entry.hit_count);
-        if entry.tsc_elapsed_inclusive != duration {
-            percentage := 100.0 * cast(float64) entry.tsc_elapsed_inclusive / cast(float64) total_elapsed;
-            print(", w/ children: % ticks (%0%% of measured)", entry.tsc_elapsed_inclusive, percentage);
+        percentage := 100.0 * cast(float64) exclusive / cast(float64) total_elapsed;
+        print("  - %: % ticks (%0%% of measured; % hits)", entry.label, exclusive, percentage, entry.hit_count);
+        if inclusive != exclusive {
+            percentage := 100.0 * cast(float64) inclusive / cast(float64) total_elapsed;
+            print(", w/ children: % ticks (%0%% of measured)", inclusive, percentage);
         }
         print("\n");
     }
