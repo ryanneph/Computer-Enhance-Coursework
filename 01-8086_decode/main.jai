@@ -685,9 +685,6 @@ _decode_rm :: (head_disp: *u8, field_mod: u8, field_rm: u8, field_w: u8)
         rm = operand_register(field_rm, field_w);
         advance_count = 0;
     } else {
-        rm.type = .MEMORY;
-        rm.mem = effective_address_table[field_rm];
-
         effective_address_table :: Memory.[
             .{ reg1 = .BX, reg2 = .SI,      },
             .{ reg1 = .BX, reg2 = .DI,      },
@@ -699,6 +696,9 @@ _decode_rm :: (head_disp: *u8, field_mod: u8, field_rm: u8, field_w: u8)
             .{ reg1 = .BX, reg2 = .INVALID, },
         ];
         assert(field_rm < effective_address_table.count);
+
+        rm.type = .MEMORY;
+        rm.mem = effective_address_table[field_rm];
 
         if field_mod == {
             case 0b00;
