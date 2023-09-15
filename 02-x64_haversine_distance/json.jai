@@ -79,6 +79,8 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, succes
             print("': ");
         }
 
+        // TODO(ryan): combine all "types" of token identification into one switch
+
         //
         // Whitespace
         //

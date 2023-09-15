@@ -1,6 +1,6 @@
 #import "Basic";
 
-#load "profile.jai";
+#import,dir "./profiler"()(DISABLED=false);
 
 recurse :: (depth: s64) {
     profile_function();

@@ -5,7 +5,8 @@
 #import "Random";
 
 #load "json.jai";
-#load "profile.jai";
+
+#import,dir "./profiler"()(DISABLED=false);
 
 Point_Pair :: struct {
     x0, y0: float64;

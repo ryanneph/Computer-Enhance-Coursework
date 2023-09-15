@@ -1,0 +1,187 @@
+// set DISABLED = true to make all calls no-ops, so instrumentation is disabled
+// without modifying one's program
+#module_parameters()(DISABLED := false);
+
+#load "timing.jai";
+
+#scope_file
+#import "Compiler";
+PROFILER_DEBUG :: #run -> bool {
+    // NOTE(ryan): as of jai "beta 0.1.063, built on 12 May 2023", this is a robust test of `-release` during build,
+    // but it may not stay that way!
+    options := get_build_options();
+    is_debug := options.array_bounds_check != .OFF;
+    return is_debug;
+};
+
+Profiler :: struct {
+    start_tsc: u64;
+}
+global_profiler: Profiler;
+
+#if !DISABLED {
+    #scope_file
+    Profile_Entry :: struct {
+        tsc_elapsed_inclusive: u64;
+        tsc_elapsed_exclusive: u64;
+        hit_count: u64;
+        label: string;
+    }
+
+    // NOTE(ryan): entries[0] reserved to avoid branching for root-level profile blocks
+    entries: [1024]Profile_Entry;
+    latest_parent_index: s64;
+    #no_reset next_entry_index: u64 = 1;
+
+    profile_get_unique_index :: () -> u64 {
+        // called at compile-time to retrieve the same entry for each call from a particular location
+        // so that looping calls can aggregate into the same entry.
+        assert(#compile_time);
+        assert(next_entry_index < entries.count-1);
+
+        index := next_entry_index;
+        next_entry_index += 1;
+
+        return index;
+    }
+
+    #scope_export
+    // locally scoped instance of a globally stored Profile_Entry
+    Profile_Block :: struct {
+        entry_index: u64;
+        label: string;
+
+        start_tsc: u64;
+        old_tsc_elapsed_inclusive: u64; // remember at block open for recursive handling
+
+        // handle nested blocks
+        parent_entry_index: s64;
+
+        #if PROFILER_DEBUG
+        started: bool;
+    }
+
+    profile_block_init :: (label: string, loc := #caller_location) -> Profile_Block #expand {
+        index: u64 : #run profile_get_unique_index();
+
+        block: Profile_Block;
+        block.entry_index = index;
+        block.label = label;
+
+        return block;
+    }
+
+    profile_block_start :: (block: *Profile_Block) {
+        #if PROFILER_DEBUG {
+            assert(!block.started);
+            block.started = true;
+        }
+
+        entry := *entries[block.entry_index];
+        block.old_tsc_elapsed_inclusive = entry.tsc_elapsed_inclusive;
+
+        block.start_tsc = read_cpu_timer();
+        block.parent_entry_index = latest_parent_index;
+        latest_parent_index = cast(s64) block.entry_index;
+    }
+
+    profile_block_stop :: (block: *Profile_Block) {
+        latest_parent_index = block.parent_entry_index;
+        duration := read_cpu_timer() - block.start_tsc;
+
+        parent_entry := *entries[block.parent_entry_index];
+        entry        := *entries[block.entry_index];
+
+        #if PROFILER_DEBUG {
+            assert(block.started);
+            block.started = false;
+        }
+
+        parent_entry.tsc_elapsed_exclusive -= duration;
+        entry.tsc_elapsed_exclusive += duration;
+        entry.tsc_elapsed_inclusive  = block.old_tsc_elapsed_inclusive + duration;
+        entry.hit_count += 1;
+        entry.label = block.label;
+    }
+
+    profile_block :: (label: string, loc := #caller_location) #expand {
+        block := profile_block_init(label, loc);
+        profile_block_start(*block);
+        `defer profile_block_stop(*block);
+    }
+
+    profile_function :: (loc := #caller_location) #expand {
+        block := profile_block_init(#procedure_name(), loc);
+        profile_block_start(*block);
+        `defer profile_block_stop(*block);
+    }
+} else {
+    #scope_export
+    Profile_Block :: *void;
+
+    profile_block_init :: (label: string, loc := #caller_location) -> Profile_Block #expand {
+        return null;
+    }
+
+    profile_block_start :: (block: *Profile_Block) {}
+
+    profile_block_stop :: (block: *Profile_Block) {}
+
+    profile_block :: (label: string, loc := #caller_location) #expand {}
+
+    profile_function :: (loc := #caller_location) #expand {}
+}
+
+
+#scope_export
+profiler_begin :: () {
+    using global_profiler;
+    start_tsc = read_cpu_timer();
+}
+
+profiler_end_and_summarize :: () {
+    using global_profiler;
+    total_elapsed := read_cpu_timer() - start_tsc;
+
+    print("Profiler Summary (total: % ticks; %s)\n", total_elapsed,
+        cast(float64)total_elapsed / cast(float64)get_cpu_timer_freq());
+
+    #if !DISABLED {
+        unmeasured := total_elapsed;
+        for index : 1..next_entry_index-1 {
+            entry := *entries[index];
+            if entry.tsc_elapsed_inclusive == 0  continue;
+
+            inclusive := entry.tsc_elapsed_inclusive;
+            exclusive := entry.tsc_elapsed_exclusive;
+
+            assert(unmeasured >= exclusive);
+            unmeasured -= exclusive;
+
+            percentage := 100.0 * cast(float64) exclusive / cast(float64) total_elapsed;
+            print("  - %: % ticks (%0%% of measured; % hits)", entry.label, exclusive, percentage, entry.hit_count);
+            if inclusive != exclusive {
+                percentage := 100.0 * cast(float64) inclusive / cast(float64) total_elapsed;
+                print(", w/ children: % ticks (%0%% of measured)", inclusive, percentage);
+            }
+            print("\n");
+        }
+
+        if (unmeasured > 0) {
+            percentage := 100.0 * cast(float64) unmeasured / cast(float64) total_elapsed;
+            print("  - (unmeasured): % ticks (%0%% of measured)\n", unmeasured, percentage);
+        }
+    }
+}
+
+Timer :: struct {
+    start: u64;
+    elapsed: u64;
+}
+timer_start :: (timer: *Timer) #expand {
+    timer.start = read_cpu_timer();
+}
+timer_stop :: (timer: *Timer) #expand {
+    timer_stop := read_cpu_timer();
+    timer.elapsed += timer_stop - timer.start;
+}
