@@ -260,7 +260,10 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, succes
     return tokens, true;
 }
 
-parse_tokens :: (tokens: []Token) -> (root: *Json_Node) {
+// used as a stable allocator for new nodes during parsing
+Json_Node_Storage :: Bucket_Array(Json_Node, 1024);
+
+parse_tokens :: (node_storage: *Json_Node_Storage, tokens: []Token) -> (root: *Json_Node) {
     profile_block("json parsing");
 
     if !tokens  return null;
@@ -270,13 +273,13 @@ parse_tokens :: (tokens: []Token) -> (root: *Json_Node) {
 
     stack: [..] *Json_Node;
     array_add(*stack, *throwaway_root);
+    defer array_free(stack);
 
-    node_storage: Bucket_Array(Json_Node, 1024 * 1024);
     New_Node :: (node_type: Json_Node_Type) -> *Json_Node #expand {
         node: Json_Node;
         node.type = node_type;
 
-        locator, pointer := bucket_array_add(*node_storage, node);
+        locator, pointer := bucket_array_add(node_storage, node);
         return pointer;
     }
 
@@ -427,7 +430,7 @@ Json_Document :: struct {
     root: *Json_Node;
 
     // internal use
-    _allocator: Allocator;
+    node_storage: Json_Node_Storage;
 }
 
 parse_json :: (json_string: string, debug_output := false) -> (Json_Document, success: bool) {
@@ -440,7 +443,8 @@ parse_json :: (json_string: string, debug_output := false) -> (Json_Document, su
     }
 
     // TODO(ryan): lex tokens during json parsing as needed.
-    root_node := parse_tokens(tokens);
+    node_storage: Json_Node_Storage;
+    root_node := parse_tokens(*node_storage, tokens);
 
     {
         profile_block("json token cleanup");
@@ -454,29 +458,13 @@ parse_json :: (json_string: string, debug_output := false) -> (Json_Document, su
 
     doc: Json_Document;
     doc.root = root_node;
-    doc._allocator = context.allocator;
+    doc.node_storage = node_storage;
 
     return doc, true;
 }
 
 free_memory :: (doc: Json_Document) {
-    new_context: Context;
-    new_context.allocator = doc._allocator;
-    push_context new_context {
-        stack: [..] *Json_Node;
-        array_add(*stack, doc.root);
-
-        while stack.count {
-            node := pop(*stack);
-            if node.type == .ARRAY || node.type == .OBJECT {
-                it := node.next_child;
-                while it != null
-                    array_add(*stack, it);
-            }
-
-            free(node);
-        }
-    }
+    bucket_array_reset(*doc.node_storage);
 }
 
 find_node_by_name :: (object_node: *Json_Node, name: string) -> (found: bool, node: *Json_Node) {

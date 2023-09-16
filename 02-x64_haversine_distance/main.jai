@@ -1,6 +1,6 @@
 //===== Debug Options =======
-REPORT_MEMORY_LEAKS :: true;
 USE_PROFILER        :: true;
+REPORT_MEMORY_LEAKS :: false;
 // ==========================
 
 #import "Basic"()(MEMORY_DEBUGGER=REPORT_MEMORY_LEAKS);
@@ -161,6 +161,10 @@ compute_from_binary :: (input_filename: string) {
         print("failed to open binary data from file '%'\n", input_filename);
         return;
     }
+    defer {
+        free(pairs.data);
+        free(dists.data);
+    }
 
     print("Found % pairs in binary file '%'\n", pairs.count, input_filename);
 
@@ -185,6 +189,7 @@ compute_from_json :: (input_filename: string) {
         json_string, read_success = read_entire_file(input_filename);
         assert(read_success);
     }
+    defer free(json_string);
 
     json_doc: Json_Document;
     parse_success: bool;
@@ -243,6 +248,8 @@ compute_from_json :: (input_filename: string) {
 
     average: float64 = sum / cast(float64)count;
     print("Average of % pairs: %\n", count, average);
+
+    free_memory(json_doc);
 }
 
 arg_parse_flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED | .ALIGN_HELP;
@@ -302,5 +309,11 @@ main :: () {
     }
 
     #if REPORT_MEMORY_LEAKS
-        report_memory_leaks();
+    {
+        options: Leak_Report_Options;
+        options.roots_to_skip = .[
+            .{"main", ""},
+        ];
+        report_memory_leaks(*options);
+    }
 }
