@@ -1,4 +1,9 @@
-#import "Basic";
+//===== Debug Options =======
+REPORT_MEMORY_LEAKS :: true;
+USE_PROFILER        :: true;
+// ==========================
+
+#import "Basic"()(MEMORY_DEBUGGER=REPORT_MEMORY_LEAKS);
 #import "Command_Line";
 #import "File";
 #import "Math";
@@ -6,7 +11,7 @@
 
 #load "json.jai";
 
-#import,dir "./profiler"()(DISABLED=false);
+#import,dir "./profiler"()(DISABLED=!USE_PROFILER);
 
 Point_Pair :: struct {
     x0, y0: float64;
@@ -295,4 +300,7 @@ main :: () {
     if args.mode == "compute" || args.mode == "compute-binary" {
         profiler_end_and_summarize();
     }
+
+    #if REPORT_MEMORY_LEAKS
+        report_memory_leaks();
 }
