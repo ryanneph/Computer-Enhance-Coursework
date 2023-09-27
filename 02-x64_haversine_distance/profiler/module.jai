@@ -140,13 +140,20 @@ profiler_begin :: () {
 }
 
 profiler_end_and_summarize :: () {
+    FMT :: (x: Any, precision: s64) -> FormatFloat #expand {
+        return formatFloat(x, trailing_width=precision, zero_removal=.NO);
+    }
+
     using global_profiler;
     total_elapsed := read_cpu_timer() - start_tsc;
 
-    print("Profiler Summary (total: % ticks; %s)\n", total_elapsed,
-        cast(float64)total_elapsed / cast(float64)get_cpu_timer_freq());
+    timer_freq := cast(float64) get_cpu_timer_freq();
+    print("Profiler Summary (total: % ms; timer freq: % GHz)\n",
+        FMT(cast(float64)total_elapsed / timer_freq, 4),
+        FMT(timer_freq / 1_000_000_000.0, 2));
 
     #if !DISABLED {
+
         unmeasured := total_elapsed;
         for index : 1..next_entry_index-1 {
             entry := *entries[index];
@@ -159,17 +166,17 @@ profiler_end_and_summarize :: () {
             unmeasured -= exclusive;
 
             percentage := 100.0 * cast(float64) exclusive / cast(float64) total_elapsed;
-            print("  - %: % ticks (%0%% of measured; % hits)", entry.label, exclusive, percentage, entry.hit_count);
+            print("  - %[%]: % (%0%%", entry.label, entry.hit_count, exclusive, FMT(percentage, 2));
             if inclusive != exclusive {
                 percentage := 100.0 * cast(float64) inclusive / cast(float64) total_elapsed;
-                print(", w/ children: % ticks (%0%% of measured)", inclusive, percentage);
+                print(", %0%% w/children", FMT(percentage, 2));
             }
-            print("\n");
+            print(")\n");
         }
 
         if (unmeasured > 0) {
             percentage := 100.0 * cast(float64) unmeasured / cast(float64) total_elapsed;
-            print("  - (unmeasured): % ticks (%0%% of measured)\n", unmeasured, percentage);
+            print("  - (unmeasured): % (%0%%)\n", unmeasured, FMT(percentage, 2));
         }
     }
 }
