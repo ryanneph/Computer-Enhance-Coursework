@@ -178,15 +178,32 @@ compute_from_binary :: (input_filename: string) {
     }
 }
 
-compute_from_json :: (input_filename: string) {
-    block_node_lookup := profile_block_init("json node lookup");
-    block_float_parsing := profile_block_init("float parsing");
+read_full_file :: (filename: string) -> (data: string, success: bool) {
+    success: bool;
 
+    file:, success = file_open(filename);
+    if !success
+        return "", false;
+
+    count:, success = file_length(file);
+    if !success || !count
+        return "", false;
+
+    data: string;
+    {
+        profile_block_bandwidth("fread", cast(u64)count);
+        data, success = read_entire_file(file);
+    }
+
+    return data, success;
+}
+
+compute_from_json :: (input_filename: string) {
     json_string: string;
     {
         profile_block("read file");
         read_success: bool;
-        json_string, read_success = read_entire_file(input_filename);
+        json_string, read_success = read_full_file(input_filename);
         assert(read_success);
     }
     defer free(json_string);
@@ -211,28 +228,31 @@ compute_from_json :: (input_filename: string) {
     while it != null {
         assert(it.type == .OBJECT);
 
-        get_member :: (member_name: string) -> float64 #expand {
-            profile_block_start(*block_node_lookup);
-            found, node := find_node_by_name(it, member_name);
-            assert(found && node.type == .NUMBER);
-            profile_block_stop(*block_node_lookup);
+        get_member :: (object_node: *Json_Node, member_name: string) -> float64 {
+            node: *Json_Node;
 
-            profile_block_start(*block_float_parsing);
-            float_value, success := string_to_float64(node.value_string);
-            if !success {
-                print("Error parsing float from string '%'.\n", node.value_string);
-                float_value = 0.0;
+            {
+                profile_block("json node lookup");
+                found:, node = find_node_by_name(object_node, member_name);
+                assert(found && node.type == .NUMBER);
             }
-            profile_block_stop(*block_float_parsing);
 
-            return float_value;
+            {
+                profile_block("float parsing");
+                float_value, success := string_to_float64(node.value_string);
+                if !success {
+                    print("Error parsing float from string '%'.\n", node.value_string);
+                    return 0.0;
+                }
+                return float_value;
+            }
         }
 
         pair: Point_Pair;
-        pair.x0 = get_member("x0");
-        pair.y0 = get_member("y0");
-        pair.x1 = get_member("x1");
-        pair.y1 = get_member("y1");
+        pair.x0 = get_member(it, "x0");
+        pair.y0 = get_member(it, "y0");
+        pair.x1 = get_member(it, "x1");
+        pair.y1 = get_member(it, "y1");
 
         {
             profile_block("compute");

@@ -25,6 +25,7 @@ global_profiler: Profiler;
         tsc_elapsed_inclusive: u64;
         tsc_elapsed_exclusive: u64;
         hit_count: u64;
+        byte_count: u64;
         label: string;
     }
 
@@ -61,12 +62,15 @@ global_profiler: Profiler;
         started: bool;
     }
 
-    profile_block_init :: (label: string, loc := #caller_location) -> Profile_Block #expand {
+    profile_block_init :: (label: string, byte_count: u64 = 0, loc := #caller_location) -> Profile_Block #expand {
         index: u64 : #run profile_get_unique_index();
 
         block: Profile_Block;
         block.entry_index = index;
         block.label = label;
+
+        entry := *entries[block.entry_index];
+        entry.byte_count += byte_count;
 
         return block;
     }
@@ -105,13 +109,19 @@ global_profiler: Profiler;
     }
 
     profile_block :: (label: string, loc := #caller_location) #expand {
-        block := profile_block_init(label, loc);
+        block := profile_block_init(label, 0, loc);
         profile_block_start(*block);
         `defer profile_block_stop(*block);
     }
 
     profile_function :: (loc := #caller_location) #expand {
-        block := profile_block_init(#procedure_name(), loc);
+        block := profile_block_init(#procedure_name(), 0, loc);
+        profile_block_start(*block);
+        `defer profile_block_stop(*block);
+    }
+
+    profile_block_bandwidth :: (label: string, byte_count: u64, loc := #caller_location) #expand {
+        block := profile_block_init(label, byte_count, loc);
         profile_block_start(*block);
         `defer profile_block_stop(*block);
     }
@@ -119,7 +129,7 @@ global_profiler: Profiler;
     #scope_export
     Profile_Block :: *void;
 
-    profile_block_init :: (label: string, loc := #caller_location) -> Profile_Block #expand {
+    profile_block_init :: (label: string, byte_count: u64 = 0, loc := #caller_location) -> Profile_Block #expand {
         return null;
     }
 
@@ -130,6 +140,8 @@ global_profiler: Profiler;
     profile_block :: (label: string, loc := #caller_location) #expand {}
 
     profile_function :: (loc := #caller_location) #expand {}
+
+    profile_block_bandwidth :: (label: string, byte_count: u64, loc := #caller_location) #expand {}
 }
 
 
@@ -146,10 +158,10 @@ profiler_end_and_summarize :: () {
 
     using global_profiler;
     total_elapsed := read_cpu_timer() - start_tsc;
-
     timer_freq := cast(float64) get_cpu_timer_freq();
-    print("Profiler Summary (total: % ms; timer freq: % GHz)\n",
-        FMT(cast(float64)total_elapsed / timer_freq, 4),
+    total_seconds := cast(float64) total_elapsed / timer_freq;
+    print("Profiler Summary (total: % s; timer freq: % GHz)\n",
+        FMT(total_seconds * 1000.0, 4),
         FMT(timer_freq / 1_000_000_000.0, 2));
 
     #if !DISABLED {
@@ -171,7 +183,15 @@ profiler_end_and_summarize :: () {
                 percentage := 100.0 * cast(float64) inclusive / cast(float64) total_elapsed;
                 print(", %0%% w/children", FMT(percentage, 2));
             }
-            print(")\n");
+            print(")");
+
+            if entry.byte_count > 0 {
+                megabytes := cast(float64) entry.byte_count / cast(float64) (1024 * 1024);
+                gigabytes := megabytes / 1024.0;
+                gigabytes_per_second := gigabytes * timer_freq / cast(float64) inclusive;
+                print(" (% mb; % gb/s)", megabytes, gigabytes_per_second);
+            }
+            print("\n");
         }
 
         if (unmeasured > 0) {
