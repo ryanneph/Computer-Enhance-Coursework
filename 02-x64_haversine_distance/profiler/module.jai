@@ -32,16 +32,16 @@ global_profiler: Profiler;
     // NOTE(ryan): entries[0] reserved to avoid branching for root-level profile blocks
     entries: [1024]Profile_Entry;
     latest_parent_index: s64;
-    #no_reset next_entry_index: u64 = 1;
+    #no_reset profile_entry_count: u64 = 0;
 
-    profile_get_unique_index :: () -> u64 {
+    profile_get_unique_index :: (loc := #caller_location) -> u64 {
         // called at compile-time to retrieve the same entry for each call from a particular location
         // so that looping calls can aggregate into the same entry.
         assert(#compile_time);
-        assert(next_entry_index < entries.count-1);
 
-        index := next_entry_index;
-        next_entry_index += 1;
+        profile_entry_count += 1;
+        index := profile_entry_count;
+        assert(index < entries.count-1);
 
         return index;
     }
@@ -63,7 +63,7 @@ global_profiler: Profiler;
     }
 
     profile_block_init :: (label: string, byte_count: u64 = 0, loc := #caller_location) -> Profile_Block #expand {
-        index: u64 : #run profile_get_unique_index();
+        index: u64 : #run profile_get_unique_index(loc);
 
         block: Profile_Block;
         block.entry_index = index;
@@ -132,15 +132,10 @@ global_profiler: Profiler;
     profile_block_init :: (label: string, byte_count: u64 = 0, loc := #caller_location) -> Profile_Block #expand {
         return null;
     }
-
     profile_block_start :: (block: *Profile_Block) {}
-
     profile_block_stop :: (block: *Profile_Block) {}
-
     profile_block :: (label: string, loc := #caller_location) #expand {}
-
     profile_function :: (loc := #caller_location) #expand {}
-
     profile_block_bandwidth :: (label: string, byte_count: u64, loc := #caller_location) #expand {}
 }
 
@@ -167,7 +162,7 @@ profiler_end_and_summarize :: () {
     #if !DISABLED {
 
         unmeasured := total_elapsed;
-        for index : 1..next_entry_index-1 {
+        if profile_entry_count > 0  for index : 1..profile_entry_count-1 {
             entry := *entries[index];
             if entry.tsc_elapsed_inclusive == 0  continue;
 
