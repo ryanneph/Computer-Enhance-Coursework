@@ -185,17 +185,24 @@ read_full_file :: (filename: string) -> (data: string, success: bool) {
     if !success
         return "", false;
 
-    count:, success = file_length(file);
-    if !success || !count
+    contents: string;
+
+    contents.count, success = file_length(file);
+    if !success || !contents.count
         return "", false;
 
-    data: string;
+    contents.data = alloc(contents.count);
+
     {
-        profile_block_bandwidth("fread", cast(u64)count);
-        data, success = read_entire_file(file);
+        profile_block_bandwidth("file_read", cast(u64)contents.count);
+        success, read_count: = file_read(file, contents.data, contents.count);
+        if !success || read_count != contents.count {
+            free(contents.data);
+            return "", false;
+        }
     }
 
-    return data, success;
+    return contents, success;
 }
 
 compute_from_json :: (input_filename: string) {

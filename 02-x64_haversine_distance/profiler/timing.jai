@@ -20,7 +20,11 @@ report_timing_info :: () {
 }
 
 calibrate_cpu_timer :: (period_count: u64 = 10000, verbose := false) -> u64 {
-    // expect at least 10 periods of the os timer for calibration for better accuracy
+    // Compares the CPU timestamp counter (RDTSC) to the OS timer
+    // (with known frequency) to determine the RDTSC frequency.
+
+    // expect at least 10 periods of the os timer for calibration for better
+    // accuracy
     assert(period_count >= 100);
 
     os_freq := get_os_timer_freq();
@@ -45,7 +49,7 @@ calibrate_cpu_timer :: (period_count: u64 = 10000, verbose := false) -> u64 {
         print("OS   timer: % -> % = % elapsed\n", ost_start, ost_end, ost_elapsed);
         print("OS seconds: %\n", ost_elapsed_seconds);
         print("CPU  timer: % -> % = % elapsed\n", cput_start, cput_end, cput_elapsed);
-        print("CPU   freq: % Gticks/sec (guessed)\n", cast(float64)cpu_freq / 1_000_000_000);
+        print("CPU   freq: % GHz (guessed)\n", cast(float64)cpu_freq / 1_000_000_000);
     }
 
     return cpu_freq;

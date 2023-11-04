@@ -2,6 +2,7 @@
 // without modifying one's program
 #module_parameters()(DISABLED := false);
 
+#load "repetition_tester.jai";
 #load "timing.jai";
 
 #scope_file
@@ -152,6 +153,8 @@ profiler_end_and_summarize :: () {
     }
 
     using global_profiler;
+    assert(start_tsc > 0); // Forgot to call profiler_begin()?
+
     total_elapsed := read_cpu_timer() - start_tsc;
     timer_freq := cast(float64) get_cpu_timer_freq();
     total_seconds := cast(float64) total_elapsed / timer_freq;
@@ -200,10 +203,16 @@ Timer :: struct {
     start: u64;
     elapsed: u64;
 }
-timer_start :: (timer: *Timer) #expand {
-    timer.start = read_cpu_timer();
+timer_start :: (using timer: *Timer) {
+    start = read_cpu_timer();
 }
-timer_stop :: (timer: *Timer) #expand {
+timer_stop :: (using timer: *Timer) {
     timer_stop := read_cpu_timer();
-    timer.elapsed += timer_stop - timer.start;
+    elapsed += timer_stop - start;
+}
+timer_reset :: (using timer: *Timer) {
+    elapsed = 0;
+}
+timer_seconds :: (using timer: *Timer) -> float64 {
+    return cast(float64) elapsed / get_cpu_timer_freq();
 }
