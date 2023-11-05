@@ -22,33 +22,34 @@ print_record :: (using record: *Repetition_Test_Record, label: string) {
         gigabytes_per_second = gigabytes / seconds;
     }
 
-    print("  - %: % (% ms) (% mb; % gb/s)\n", label, elapsed,
+    print("%: % (% ms) (% mb; % gb/s)\n", label, elapsed,
         FMT(1000 * seconds), FMT(megabytes), FMT(gigabytes_per_second));
 }
 
+
+#scope_export
 Repetition_Test_Record :: struct {
     elapsed: u64;
     data_count: u64;
 }
 
 Repetition_Test :: struct {
-    iterations: s64;
+    iters: u64;
+    max_iters: u64;
     timer: Timer;
 
     // stats
     min_record: Repetition_Test_Record;
     max_record: Repetition_Test_Record;
-    avg_record: Repetition_Test_Record;
-    avg_count: u64;
+    cum_record: Repetition_Test_Record;
+    cum_count: u64;
 }
 
-
-#scope_export
-repetition_test_init :: (iterations: s64) -> Repetition_Test {
-    assert(iterations > 0);
+repetition_test_init :: (max_iters: u64 = 100) -> Repetition_Test {
+    assert(max_iters > 0);
 
     test: Repetition_Test;
-    test.iterations = iterations;
+    test.max_iters = max_iters;
     test.min_record = .{ U64_MAX, 0 };
     test.max_record = .{ U64_MIN, 0 };
 
@@ -57,12 +58,11 @@ repetition_test_init :: (iterations: s64) -> Repetition_Test {
 
 // TODO(ryan): write for_expansion that gives current iteration number
 repetition_test_is_running :: (using test: *Repetition_Test) -> bool {
-    iter := iterations;
-    iterations -= 1;
-    return iter > 0;
+    return !max_iters || iters < max_iters;
 }
 
 repetition_test_start :: (using test: *Repetition_Test) {
+    iters += 1;
     timer_reset(*timer);
     timer_start(*timer);
 }
@@ -79,20 +79,21 @@ repetition_test_stop :: (using test: *Repetition_Test, count_for_bandwidth: u64)
         min_record.data_count = count_for_bandwidth;
     }
 
-    avg_record.elapsed += timer.elapsed;
-    avg_record.data_count += count_for_bandwidth;
-    avg_count += 1;
+    cum_record.elapsed += timer.elapsed;
+    cum_record.data_count += count_for_bandwidth;
+    cum_count += 1;
 }
 
 repetition_test_report :: (using test: *Repetition_Test) {
     cpu_freq := get_cpu_timer_freq(); // this may take some time, so do it on cold path
 
-    if avg_count > 0 {
-        avg_record.elapsed    = avg_record.elapsed    / avg_count;
-        avg_record.data_count = avg_record.data_count / avg_count;
+
+    avg_record: Repetition_Test_Record;
+    if cum_count > 0 {
+        avg_record.elapsed    = cum_record.elapsed    / cum_count;
+        avg_record.data_count = cum_record.data_count / cum_count;
     }
 
-    print("Bandwidth Stats:\n");
     print_record(*min_record, "Min");
     print_record(*max_record, "Max");
     print_record(*avg_record, "Avg");
