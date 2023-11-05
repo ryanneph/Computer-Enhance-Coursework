@@ -1,9 +1,10 @@
 Personal work produced while following Casey Muratori's ["Computer Enhance" course](https://www.computerenhance.com/).
 
-Source code is primarily (if not completely) written using `Version: beta 0.1.060, built on 08 April 2023`
-of Jonathan Blow's "jai" programming language on a modern Linux-based operating system. Access to the "jai"
-compiler is currently (as of this writing) restricted to closed beta participants only. I will provide
-best-effort to ensure the code remains as portable as possible, but support will not be guaranteed.
+Source code has been developed with several versions of Jonathan Blow's "jai" programming language on a modern
+Linux-based operating system, and has been most recently tested with `Version: beta 0.1.074b, built on 26 August 2023`.
+Access to the "jai" compiler is currently (as of this writing) restricted to closed beta participants only. I
+will provide best-effort to ensure the code remains as portable as possible, but support will not be
+guaranteed.
 
 ### Note about obtaining the course materials
 Many example programs in this repository are intended to be executed with access to the original "Computer
