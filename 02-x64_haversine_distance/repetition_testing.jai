@@ -9,6 +9,14 @@ Mode :: enum {
     PREALLOCATE_PRIMED;
 }
 
+Test :: struct {
+    name: string;
+    tester: Repetition_Test;
+
+    mode: Mode;
+    data: *u8;
+}
+
 get_file_length :: (filename: string) -> s64 {
     file, success := file_open(filename);
     assert(success);
@@ -17,47 +25,40 @@ get_file_length :: (filename: string) -> s64 {
     return file_length(file);
 }
 
-run_test :: (tester: *Repetition_Test, mode: Mode, max_iters_this_run: u64) {
+run_test :: (test: *Test, max_iters_this_run: u64) {
     success: bool;
     filename := "./haversine_input.json";
 
     count := get_file_length(filename);
     assert(count > 0);
 
-    data: *u8;
-    if mode == .PREALLOCATE_UNPRIMED || mode == .PREALLOCATE_PRIMED {
-        data = alloc(count);
-        if mode == .PREALLOCATE_PRIMED {
+    if !test.data && test.mode == .PREALLOCATE_UNPRIMED || test.mode == .PREALLOCATE_PRIMED {
+        test.data = alloc(count);
+        if test.mode == .PREALLOCATE_PRIMED {
             // prime memory pages for early mapping
-            memset(data, 0, count);
+            memset(test.data, 0, count);
         }
     }
 
     iter: u64 = 0;
-    while repetition_test_is_running(tester) && iter < max_iters_this_run {
+    while repetition_test_is_running(*test.tester) && iter < max_iters_this_run {
         iter += 1;
 
         file:, success = file_open(filename);
-        if mode == .ALLOCATE_ON_READ
-            data = alloc(count);
+        if test.mode == .ALLOCATE_ON_READ
+            test.data = alloc(count);
 
-        repetition_test_start(tester);
+        repetition_test_start(*test.tester);
         {
-            success, read_count: = file_read(file, data, count);
+            success, read_count: = file_read(file, test.data, count);
             assert(read_count == count);
         }
-        repetition_test_stop(tester, cast(u64)count);
+        repetition_test_stop(*test.tester, cast(u64)count);
 
         file_close(*file);
-        if mode == .ALLOCATE_ON_READ
-            free(data);
+        if test.mode == .ALLOCATE_ON_READ
+            free(test.data);
     }
-}
-
-Test :: struct {
-    name: string;
-    mode: Mode;
-    tester: Repetition_Test;
 }
 
 #import "Reflection";
@@ -84,7 +85,7 @@ main :: () {
             continue;
         }
 
-        run_test(*test.tester, test.mode, ITERS_PER_BATCH);
+        run_test(test, ITERS_PER_BATCH);
         print("report for test '%' after % iters\n", test.name, test.tester.iters);
         repetition_test_report(*test.tester);
         print("\n");
