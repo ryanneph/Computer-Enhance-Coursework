@@ -2,6 +2,7 @@
 // without modifying one's program
 #module_parameters()(DISABLED := false);
 
+#load "counters.jai";
 #load "profiler.jai";
 #load "repetition_tester.jai";
 #load "timer.jai";
