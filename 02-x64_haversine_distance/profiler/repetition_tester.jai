@@ -104,9 +104,10 @@ print_record :: (using record: *Repetition_Test_Record, label: string) {
         page_faults_per_second = cast(float64) page_fault_count / seconds;
     }
 
-    print("%: % (% ms) (% mb; % gb/s)", label, cpu_timer, FMT(1000 * seconds),
-        FMT(megabytes), FMT(gigabytes_per_second));
-
+    print("%: % (% ms)", label, cpu_timer, FMT(1000 * seconds));
+    if byte_count {
+        print(" (% mb; % gb/s)", FMT(megabytes), FMT(gigabytes_per_second));
+    }
     if page_fault_count > 0 {
         kb_per_fault := cast(float64) byte_count / (1024.0 * page_fault_count);
         print(" (% faults; % kb/fault)", page_fault_count, FMT(kb_per_fault));
