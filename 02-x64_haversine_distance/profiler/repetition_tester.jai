@@ -7,7 +7,14 @@ Repetition_Test_Record :: struct {
     page_fault_count: u64;
 }
 
+Test_State :: enum {
+    STOPPED :: 0;
+    STARTED :: 1;
+    FINISHED :: 2;
+}
+
 Repetition_Test :: struct {
+    state: Test_State;
     iters: u64;
     max_iters: u64;
 
@@ -26,6 +33,7 @@ repetition_test_init :: (max_iters: u64 = 100) -> Repetition_Test {
     assert(max_iters > 0);
 
     test: Repetition_Test;
+    test.state = .STOPPED;
     test.max_iters = max_iters;
     test.min_record = .{ U64_MAX, 0, 0 };
     test.max_record = .{ U64_MIN, 0, 0 };
@@ -35,10 +43,14 @@ repetition_test_init :: (max_iters: u64 = 100) -> Repetition_Test {
 
 // TODO(ryan): write for_expansion that gives current iteration number
 repetition_test_is_running :: (using test: *Repetition_Test) -> bool {
-    return !max_iters || iters < max_iters;
+    assert(state == .STOPPED || state == .FINISHED);
+    return state != .FINISHED;
 }
 
 repetition_test_start :: (using test: *Repetition_Test) {
+    assert(state == .STOPPED);
+    state = .STARTED;
+
     iters += 1;
     timer_reset(*timer);
     timer_start(*timer);
@@ -47,6 +59,13 @@ repetition_test_start :: (using test: *Repetition_Test) {
 
 repetition_test_stop :: (using test: *Repetition_Test, count_for_bandwidth: u64) {
     timer_stop(*timer);
+
+    assert(state == .STARTED);
+    if (max_iters > 0 && iters >= max_iters) {
+        state = .FINISHED;
+    } else {
+        state = .STOPPED;
+    }
 
     record: Repetition_Test_Record;
     record.cpu_timer = timer.elapsed;
@@ -65,9 +84,6 @@ repetition_test_stop :: (using test: *Repetition_Test, count_for_bandwidth: u64)
 }
 
 repetition_test_report :: (using test: *Repetition_Test) {
-    cpu_freq := get_cpu_timer_freq(); // this may take some time, so do it on cold path
-
-
     avg_record: Repetition_Test_Record;
     if cum_count > 0 {
         avg_record.cpu_timer        = cum_record.cpu_timer        / cum_count;
