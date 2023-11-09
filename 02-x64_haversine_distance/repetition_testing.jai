@@ -94,7 +94,9 @@ run_buffer_write_test :: (test: *Test, max_iters_this_run: u64) {
 
         repetition_test_start(*test.tester);
         {
-            memset(test.data, 0, count);
+            for i: 0..count-1 {
+                test.data[i] = cast,no_check(u8)i;
+            }
         }
         repetition_test_stop(*test.tester, cast(u64) count);
 
@@ -102,16 +104,40 @@ run_buffer_write_test :: (test: *Test, max_iters_this_run: u64) {
     }
 }
 
-#import "Reflection";
+run_buffer_write_test_reverse :: (test: *Test, max_iters_this_run: u64) {
+    filename := "./haversine_input.json";
+    count := get_file_length(filename);
+
+    handle_preallocation(test, count);
+
+    iter: u64 = 0;
+    while repetition_test_is_running(*test.tester) && iter < max_iters_this_run {
+        iter += 1;
+        handle_allocation(test, count);
+
+        repetition_test_start(*test.tester);
+        {
+            for i: 0..count-1 {
+                test.data[count - 1 - i] = cast,no_check(u8)i;
+            }
+        }
+        repetition_test_stop(*test.tester, cast(u64) count);
+
+        handle_free(test);
+    }
+}
+
+#import "Reflection"; // for enum_value_to_name()
 main :: () {
     ITERS_PER_BATCH      :: 10;
     TOTAL_ITERS_PER_TEST :: 100;
 
-    tests: [4]Test = .[
-        .{ name = "file_read",    allocate_mode = .EVERY_ITER,           proc = run_file_read_test },
-        .{ name = "file_read",    allocate_mode = .PREALLOCATE_UNPRIMED, proc = run_file_read_test },
-        .{ name = "file_read",    allocate_mode = .PREALLOCATE_PRIMED,   proc = run_file_read_test },
-        .{ name = "buffer_write", allocate_mode = .EVERY_ITER,           proc = run_buffer_write_test },
+    tests: [5]Test = .[
+        .{ name = "file_read",            allocate_mode = .EVERY_ITER,           proc = run_file_read_test },
+        .{ name = "file_read",            allocate_mode = .PREALLOCATE_UNPRIMED, proc = run_file_read_test },
+        .{ name = "file_read",            allocate_mode = .PREALLOCATE_PRIMED,   proc = run_file_read_test },
+        .{ name = "buffer_write",         allocate_mode = .EVERY_ITER,           proc = run_buffer_write_test },
+        .{ name = "buffer_write_reverse", allocate_mode = .EVERY_ITER,           proc = run_buffer_write_test_reverse },
     ];
     for *test: tests {
         test.name = sprint("%::%", test.name, enum_value_to_name(test.allocate_mode));
