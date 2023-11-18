@@ -2,11 +2,13 @@
 #import "File";
 
 #import,dir "./profiler";
+#import,dir "./memory_utils";
 
 Allocate_Mode :: enum {
     EVERY_ITER :: 0;
     PREALLOCATE_UNPRIMED;
     PREALLOCATE_PRIMED;
+    LOCKED;
 }
 
 Test_Proc_Type :: #type (test: *Test, max_iters_this_run: u64);
@@ -18,6 +20,7 @@ Test :: struct {
     allocate_mode: Allocate_Mode;
     proc: Test_Proc_Type;
     data: *u8;
+    data_count: s64;
 }
 
 get_file_length :: (filename: string) -> s64 {
@@ -28,9 +31,15 @@ get_file_length :: (filename: string) -> s64 {
     return file_length(file);
 }
 
+test_set_data :: (test: *Test, addr: *void, count: s64) {
+    test.data = addr;
+    test.data_count = count;
+}
+
 handle_preallocation :: (test: *Test, count: s64) {
     if !test.data && test.allocate_mode == .PREALLOCATE_UNPRIMED || test.allocate_mode == .PREALLOCATE_PRIMED {
-        test.data = alloc(count);
+        data := alloc(count);
+        test_set_data(test, data, count);
         if test.allocate_mode == .PREALLOCATE_PRIMED {
             // prime memory pages for early mapping
             memset(test.data, 0, count);
@@ -41,7 +50,15 @@ handle_preallocation :: (test: *Test, count: s64) {
 handle_allocation :: (test: *Test, count: s64) {
     if test.allocate_mode == .EVERY_ITER {
         assert(test.data == null);
-        test.data = alloc(count);
+        data := alloc(count);
+        test_set_data(test, data, count);
+    } else if test.allocate_mode == .LOCKED {
+        assert(test.data == null);
+        page_count := ((cast(u64)count) + PAGE_SIZE-1) / PAGE_SIZE;
+        alloc_count := page_count * PAGE_SIZE;
+        data := alloc_pages(page_count);
+        test_set_data(test, data, cast(s64)alloc_count);
+        lock_memory_range(test.data, alloc_count);
     }
 }
 
@@ -50,6 +67,12 @@ handle_free :: (test: *Test) {
         assert(test.data != null);
         free(test.data);
         test.data = null;
+        test_set_data(test, null, 0);
+    } else if test.allocate_mode == .LOCKED {
+        assert(test.data != null);
+        unlock_memory_range(test.data, cast(u64)test.data_count);
+        free_pages(test.data, (cast(u64)test.data_count) / PAGE_SIZE);
+        test_set_data(test, null, 0);
     }
 }
 
@@ -132,10 +155,11 @@ main :: () {
     ITERS_PER_BATCH      :: 10;
     TOTAL_ITERS_PER_TEST :: 100;
 
-    tests: [5]Test = .[
+    tests: [6]Test = .[
         .{ name = "file_read",            allocate_mode = .EVERY_ITER,           proc = run_file_read_test },
         .{ name = "file_read",            allocate_mode = .PREALLOCATE_UNPRIMED, proc = run_file_read_test },
         .{ name = "file_read",            allocate_mode = .PREALLOCATE_PRIMED,   proc = run_file_read_test },
+        .{ name = "file_read",            allocate_mode = .LOCKED,               proc = run_file_read_test },
         .{ name = "buffer_write",         allocate_mode = .EVERY_ITER,           proc = run_buffer_write_test },
         .{ name = "buffer_write_reverse", allocate_mode = .EVERY_ITER,           proc = run_buffer_write_test_reverse },
     ];
