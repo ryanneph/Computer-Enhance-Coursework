@@ -1,28 +1,8 @@
 #import "Basic";
 #import,dir "./profiler";
+#import,dir "./memory_utils";
 
-PAGE_SIZE: u64 : 4096;
 PAGE_ALLOC_COUNT :: 4096;
-
-
-#if OS == .LINUX {
-    #import "POSIX";
-
-    alloc_pages :: (page_count: u64) -> *void {
-        addr := mmap(null, page_count * PAGE_SIZE, PROT_READ | PROT_WRITE,
-            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        assert(addr != null);
-        return addr;
-    }
-
-    free_pages :: (addr: *void, page_count: u64) {
-        ret := munmap(addr, page_count * PAGE_SIZE);
-    }
-
-} else {
-    #assert("platform not supported");
-}
-
 
 main :: () {
     print("alloc_count,touch_count,fault_count,extra_fault_count\n");
