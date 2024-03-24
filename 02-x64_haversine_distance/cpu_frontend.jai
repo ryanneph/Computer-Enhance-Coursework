@@ -23,10 +23,10 @@ main :: () {
         tester: Repetition_Test;
     }
     tests := Test.[
-        // .{ name = "mov_all_bytes_asm", proc = mov_all_bytes_asm },
-        // .{ name = "nop_all_bytes_asm", proc = nop_all_bytes_asm },
+        .{ name = "mov_all_bytes_asm", proc = mov_all_bytes_asm },
+        .{ name = "nop_all_bytes_asm", proc = nop_all_bytes_asm },
         .{ name = "cmp_all_bytes_asm", proc = cmp_all_bytes_asm },
-        // .{ name = "dec_all_bytes_asm", proc = dec_all_bytes_asm },
+        .{ name = "dec_all_bytes_asm", proc = dec_all_bytes_asm },
     ];
 
     for *test: tests {
