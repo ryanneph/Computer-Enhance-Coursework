@@ -126,19 +126,50 @@ PAGE_SIZE_1GB: u64 : #run (1 * 1024 * 1024 * 1024);
 
         return cacheline_size;
     }
-} else {
-    get_max_cpuid_leaves :: () -> (max_basic_leaf: u32, max_extended_leaf: u32) {
-        0, 0;
-    }
-    get_cpuid_leaf :: (basic_leaf: u32, sub_leaf: u32 = 0)
-    -> (eax: u32, ebx: u32, ecx: u32, edx: u32) {
-        return 0, 0, 0, 0;
-    }
-    get_cpuid_manufacturer_id_string :: () -> string {
-        return "";
-    }
-    get_cacheline_size :: () -> u64 {
-        return 0;
+
+    AVX512_Features :: struct {
+        foundation:   bool;
+        dq:           bool;
+        ifma:         bool;
+        pf:           bool;
+        er:           bool;
+        cd:           bool;
+        bw:           bool;
+        vl:           bool;
+        vbmi:         bool;
+        vbmi2:        bool;
+        vnni:         bool;
+        bitalg:       bool;
+        vpopcntdq:    bool;
+        _4vnniw:      bool;
+        _4fmaps:      bool;
+        vp2intersect: bool;
+        fp16:         bool;
+    };
+
+    get_avx512_features :: () -> AVX512_Features {
+        feats: AVX512_Features;
+
+        eax, ebx, ecx, edx := get_cpuid_leaf(0x7);
+        feats.foundation   = !!(ebx & (1 << 16));
+        feats.dq           = !!(ebx & (1 << 17));
+        feats.ifma         = !!(ebx & (1 << 21));
+        feats.pf           = !!(ebx & (1 << 26));
+        feats.er           = !!(ebx & (1 << 27));
+        feats.cd           = !!(ebx & (1 << 28));
+        feats.bw           = !!(ebx & (1 << 30));
+        feats.vl           = !!(ebx & (1 << 31));
+        feats.vbmi         = !!(ecx & (1 <<  1));
+        feats.vbmi2        = !!(ecx & (1 <<  6));
+        feats.vnni         = !!(ecx & (1 << 11));
+        feats.bitalg       = !!(ecx & (1 << 12));
+        feats.vpopcntdq    = !!(ecx & (1 << 14));
+        feats._4vnniw      = !!(edx & (1 <<  2));
+        feats._4fmaps      = !!(edx & (1 <<  3));
+        feats.vp2intersect = !!(edx & (1 <<  8));
+        feats.fp16         = !!(edx & (1 << 23));
+
+        return feats;
     }
 }
 
