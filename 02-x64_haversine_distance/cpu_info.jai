@@ -47,22 +47,23 @@
         print("CPU Extended Features:\n");
         print("======================\n");
         print("has AVX-512 foundation: %\n", avx512.foundation);
-        print("  - dword/qword         instr:  %\n", avx512.dq);
-        print("  - integer fma         instr:  %\n", avx512.ifma);
-        print("  - prefetch            instr:  %\n", avx512.pf);
-        print("  - exp/recip           instr:  %\n", avx512.er);
-        print("  - conflict detect     instr:  %\n", avx512.cd);
-        print("  - byte/word           instr:  %\n", avx512.bw);
-        print("  - vector length       instr:  %\n", avx512.vl);
-        print("  - vector bit manip    instr:  %\n", avx512.vbmi);
-        print("  - vector bit manip2   instr:  %\n", avx512.vbmi2);
-        print("  - vector neural net   instr:  %\n", avx512.vnni);
-        print("  - bitalg              instr:  %\n", avx512.bitalg);
-        print("  - vec popcnt d/qword  instr:  %\n", avx512.vpopcntdq);
-        print("  - 4-reg neural net    instr:  %\n", avx512._4vnniw);
-        print("  - 4-reg sp mult/accum instr:  %\n", avx512._4fmaps);
-        print("  - vector intersect    instr:  %\n", avx512.vp2intersect);
-        print("  - fp16 arithmetic     instr:  %\n", avx512.fp16);
+        print("has AVX-512 optional instructions:\n");
+        print("  - dword/qword          %\n", avx512.dq);
+        print("  - integer fma          %\n", avx512.ifma);
+        print("  - prefetch             %\n", avx512.pf);
+        print("  - exp/recip            %\n", avx512.er);
+        print("  - conflict detect      %\n", avx512.cd);
+        print("  - byte/word            %\n", avx512.bw);
+        print("  - vector length        %\n", avx512.vl);
+        print("  - vector bit manip     %\n", avx512.vbmi);
+        print("  - vector bit manip2    %\n", avx512.vbmi2);
+        print("  - vector neural net    %\n", avx512.vnni);
+        print("  - bitalg               %\n", avx512.bitalg);
+        print("  - vec popcnt d/qword   %\n", avx512.vpopcntdq);
+        print("  - 4-reg neural net     %\n", avx512._4vnniw);
+        print("  - 4-reg sp mult/accum  %\n", avx512._4fmaps);
+        print("  - vector intersect     %\n", avx512.vp2intersect);
+        print("  - fp16 arithmetic      %\n", avx512.fp16);
     }
 }
 
