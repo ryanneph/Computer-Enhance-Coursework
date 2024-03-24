@@ -1,5 +1,5 @@
 #if OS == .LINUX {
-    #import "System";
+    #import "System"; // for get_error_value, get_error_string
 
     page_fault_counter :: () -> (count: u64, success: bool) {
         // rusage distinguishes between soft and hard page faults:
