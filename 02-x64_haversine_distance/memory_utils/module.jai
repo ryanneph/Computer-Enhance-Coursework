@@ -54,6 +54,94 @@ PAGE_SIZE_1GB: u64 : #run (1 * 1024 * 1024 * 1024);
     #assert("platform not supported");
 }
 
+#if CPU == .X64 {
+    get_max_cpuid_leaves :: () -> (max_basic_leaf: u32, max_extended_leaf: u32) {
+        max_basic_leaf: u32 = ---;
+        max_extended_leaf: u32 = ---;
+
+        #asm {
+            eax: gpr === a;
+            ebx: gpr === b;
+            ecx: gpr === c;
+            edx: gpr === d;
+
+            // get basic info (# basic leaves and the vendor string)
+            xor.d eax, eax;
+            cpuid eax, ebx, ecx, edx;
+            mov.d max_basic_leaf, eax;
+
+            // get extended info (# extended leaves)
+            mov.d eax, 0x80000000;
+            cpuid eax, ebx, ecx, edx;
+            mov.d max_extended_leaf, eax;
+        }
+
+        return max_basic_leaf, max_extended_leaf;
+    }
+
+    get_cpuid_leaf :: (basic_leaf: u32, sub_leaf: u32 = 0)
+        -> (eax: u32, ebx: u32, ecx: u32, edx: u32)
+    {
+        eax: u32 = basic_leaf;
+        ebx: u32 = ---;
+        ecx: u32 = sub_leaf;
+        edx: u32 = ---;
+
+        #asm {
+            eax === a;
+            ebx === b;
+            ecx === c;
+            edx === d;
+
+            cpuid eax, ebx, ecx, edx;
+        }
+
+        return eax, ebx, ecx, edx;
+    }
+
+    cpu_manufacturer_id_data: [12]u8;
+    get_cpuid_manufacturer_id_string :: () -> string {
+        // EAX=0: Highest Function Parameter and Manufacturer ID
+        eax, ebx, ecx, edx := get_cpuid_leaf(0x0);
+        (cast(*u32) *(cpu_manufacturer_id_data[0])).* = ebx;
+        (cast(*u32) *(cpu_manufacturer_id_data[4])).* = edx;
+        (cast(*u32) *(cpu_manufacturer_id_data[8])).* = ecx;
+
+        return cast(string) cpu_manufacturer_id_data;
+    }
+
+    get_cacheline_size :: () -> u64 {
+        max_basic_leaf := get_max_cpuid_leaves();
+        if 0x1 > max_basic_leaf {
+            print("error: cpuid with leaf 0x1 not supported (max_basic_leaf=%)\n", max_basic_leaf);
+            return 0;
+        }
+
+        // EAX=1: Processor Info and Feature Bits
+        eax, ebx, ecx, edx := get_cpuid_leaf(0x1);
+        has_clflush := cast(bool) ecx & (1 << 19);
+        cacheline_size: u64 = ifx has_clflush
+            then cast(u64) ((ebx >> 5) & 0x7f8)
+            else cast(u64) 0;
+
+        return cacheline_size;
+    }
+} else {
+    get_max_cpuid_leaves :: () -> (max_basic_leaf: u32, max_extended_leaf: u32) {
+        0, 0;
+    }
+    get_cpuid_leaf :: (basic_leaf: u32, sub_leaf: u32 = 0)
+    -> (eax: u32, ebx: u32, ecx: u32, edx: u32) {
+        return 0, 0, 0, 0;
+    }
+    get_cpuid_manufacturer_id_string :: () -> string {
+        return "";
+    }
+    get_cacheline_size :: () -> u64 {
+        return 0;
+    }
+}
+
 
 Pointer_Decomposition :: struct {
     pml4e_index: u16; // page-map-level-4 (bits 39-47)
@@ -95,4 +183,3 @@ decompose_pointer_1gb_page :: (pointer: *void) -> Pointer_Decomposition {
 
     return decomp;
 }
-
