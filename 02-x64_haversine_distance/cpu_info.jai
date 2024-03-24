@@ -3,6 +3,8 @@
 #import,dir "./memory_utils";
 
 #if CPU == .X64 {
+    #import,file "./arch/x64.jai";
+
     get_x64_info :: () {
         // We offer an efficient way for a user to query an entire cpuid leaf
         // (i.e. get_cpuid_leaf(eax, ecx)), and extract the interesting bits.
