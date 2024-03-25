@@ -1,8 +1,10 @@
 #import "Basic";
 #import "File";
 
-#import,dir "./profiler";
-#import,dir "./memory_utils";
+#import,dir "../modules/profiler";
+#import,dir "../modules/memory_utils";
+
+READ_FILENAME :: "../02-x64_haversine_distance/haversine_input.json";
 
 Allocate_Mode :: enum {
     EVERY_ITER :: 0;
@@ -78,7 +80,7 @@ handle_free :: (test: *Test) {
 
 run_file_read_test :: (test: *Test, max_iters_this_run: u64) {
     success: bool;
-    filename := "./haversine_input.json";
+    filename := READ_FILENAME;
 
     count := get_file_length(filename);
     assert(count > 0);
@@ -105,7 +107,7 @@ run_file_read_test :: (test: *Test, max_iters_this_run: u64) {
 }
 
 run_buffer_write_test :: (test: *Test, max_iters_this_run: u64) {
-    filename := "./haversine_input.json";
+    filename := READ_FILENAME;
     count := get_file_length(filename);
 
     handle_preallocation(test, count);
@@ -128,7 +130,7 @@ run_buffer_write_test :: (test: *Test, max_iters_this_run: u64) {
 }
 
 run_buffer_write_test_reverse :: (test: *Test, max_iters_this_run: u64) {
-    filename := "./haversine_input.json";
+    filename := READ_FILENAME;
     count := get_file_length(filename);
 
     handle_preallocation(test, count);

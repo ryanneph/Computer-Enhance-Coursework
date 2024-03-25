@@ -1,6 +1,6 @@
 #import "Basic";
 
-#import,dir "./profiler"()(DISABLED=false);
+#import,dir "../modules/profiler"()(DISABLED=false);
 
 recurse :: (depth: s64) {
     profile_function();

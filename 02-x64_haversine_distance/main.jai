@@ -9,9 +9,9 @@ REPORT_MEMORY_LEAKS :: false;
 #import "Math";
 #import "Random";
 
-#load "json.jai";
+#import "profiler"()(DISABLED=!USE_PROFILER);
 
-#import,dir "./profiler"()(DISABLED=!USE_PROFILER);
+#load "json.jai";
 
 Point_Pair :: struct {
     x0, y0: float64;

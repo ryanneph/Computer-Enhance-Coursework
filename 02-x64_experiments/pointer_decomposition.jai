@@ -1,5 +1,5 @@
 #import "Basic";
-#import,dir "./memory_utils";
+#import,dir "../modules/memory_utils";
 
 print_pointer_decomposition :: (decomp: Pointer_Decomposition, prefix: string = "") {
     FMT3 :: #bake_arguments formatInt(minimum_digits=3, padding=#char " ");

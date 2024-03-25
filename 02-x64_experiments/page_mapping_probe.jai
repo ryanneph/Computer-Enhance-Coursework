@@ -1,6 +1,6 @@
 #import "Basic";
-#import,dir "./profiler";
-#import,dir "./memory_utils";
+#import,dir "../modules/profiler";
+#import,dir "../modules/memory_utils";
 
 PAGE_ALLOC_COUNT :: 4096;
 

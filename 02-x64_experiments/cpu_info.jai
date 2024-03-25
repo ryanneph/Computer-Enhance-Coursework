@@ -1,9 +1,9 @@
 #import "Basic";
 
-#import,dir "./memory_utils";
+#import,dir "../modules/memory_utils";
 
 #if CPU == .X64 {
-    #import,file "./arch/x64.jai";
+    #import,file "../modules/arch/x64.jai";
 
     get_x64_info :: () {
         // We offer an efficient way for a user to query an entire cpuid leaf
