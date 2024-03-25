@@ -21,8 +21,12 @@
         eax, ebx, ecx, edx = get_cpuid_leaf(0x1);
         has_pat            := !!(edx & (1 << 16));
         has_clflush        := !!(edx & (1 << 19));
+        has_mmx            := !!(edx & (1 << 23));
+        has_sse            := !!(edx & (1 << 25));
         has_sse2           := !!(edx & (1 << 26));
         has_cache_snooping := !!(edx & (1 << 27));
+        has_sse3           := !!(ecx & (1 <<  0));
+        has_supp_sse3      := !!(ecx & (1 <<  9));
         has_avx            := !!(ecx & (1 << 28));
 
         eax, ebx, ecx, edx = get_cpuid_leaf(0x7);
@@ -34,7 +38,11 @@
         print("cacheline size:   % bytes\n", cacheline_size);
         print("has PAT:          %\n", has_pat);
         print("has CLFLUSH:      %\n", has_clflush);
+        print("has MMX:          %\n", has_mmx);
+        print("has SSE:          %\n", has_sse);
         print("has SSE2:         %\n", has_sse2);
+        print("has SSE3:         %\n", has_sse3);
+        print("has supp. SSE3:   %\n", has_supp_sse3);
         print("has snoopy cache: %\n", has_cache_snooping);
         print("has AVX:          %\n", has_cache_snooping);
         print("has AVX2          %\n", has_avx2);
@@ -43,6 +51,7 @@
 
         // Extended Features (AVX-512)
         avx512 := get_avx512_features();
+
 
         print("CPU Extended Features:\n");
         print("======================\n");
