@@ -1505,7 +1505,7 @@ disassemble_file :: (filename: string, output_filename: string = "8086_disassemb
     file_close(*file);
 }
 
-flags_to_string :: (state: *Processor_State, allocator: Allocator = temporary_allocator) -> string {
+flags_to_string :: (state: *Processor_State) -> string {
     builder: String_Builder;
     builder.allocator = temporary_allocator;
 
@@ -1520,7 +1520,7 @@ flags_to_string :: (state: *Processor_State, allocator: Allocator = temporary_al
     if flags & .PARITY      append(*builder, "P");
     if flags & .CARRY       append(*builder, "C");
 
-    return builder_to_string(*builder, allocator);
+    return builder_to_string(*builder,, allocator=temporary_allocator);
 }
 print_processor_state :: (state: *Processor_State) {
     formatInt8  :: #bake_arguments formatInt(minimum_digits=3, padding=#char " ");
@@ -2143,7 +2143,8 @@ execute_file :: (filename: string, dump_memory: bool = false, estimate_perf: boo
 
     print("\n");
     print_processor_state(*state);
-    print("Total Cycles: %", state.perf.total_cycles);
+    if estimate_perf
+        print("Total Cycles: %", state.perf.total_cycles);
     if state.perf.unhandled_inst_count > 0
         print(" (warning: inaccurate; % unhandled instructions during perf estimation)", state.perf.unhandled_inst_count);
     print("\n");
