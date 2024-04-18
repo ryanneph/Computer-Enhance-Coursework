@@ -1,0 +1,6 @@
+[submodule "cmuratori-computer_enhance2"]
+	path = cmuratori-computer_enhance2
+	url = https://github.com/cmuratori/computer_enhance.git
+[submodule "cmuratori-computer_enhance"]
+	path = cmuratori-computer_enhance
+	url = https://github.com/cmuratori/computer_enhance.git
