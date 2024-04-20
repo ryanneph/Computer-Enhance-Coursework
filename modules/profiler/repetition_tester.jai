@@ -81,9 +81,17 @@ repetition_test_stop :: (using test: *Repetition_Test, count_for_bandwidth: u64)
     cum_record.byte_count       += record.byte_count;
     cum_record.page_fault_count += record.page_fault_count;
     cum_count += 1;
+
+    repetition_test_report(test, overwrite_previous_output=true);
 }
 
-repetition_test_report :: (using test: *Repetition_Test) {
+clear_previous :: () {
+    print("\x1b[3F"); // move up 3 lines and to beginning
+}
+
+repetition_test_report :: (using test: *Repetition_Test, overwrite_previous_output := false) {
+    if iters>1 && overwrite_previous_output  clear_previous();
+
     avg_record: Repetition_Test_Record;
     if cum_count > 0 {
         avg_record.cpu_timer        = cum_record.cpu_timer        / cum_count;
