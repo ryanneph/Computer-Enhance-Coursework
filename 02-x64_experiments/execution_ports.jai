@@ -8,6 +8,8 @@ read_x1 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 read_x2 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 read_x3 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 read_x4 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+read_1x2 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+read_8x2 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 
 
 Test_Proc :: #type (dest: *u8, count: u64) #c_call;
@@ -21,6 +23,8 @@ tests := Test.[
     .{ name = "read_x2", proc = read_x2 },
     .{ name = "read_x3", proc = read_x3 },
     .{ name = "read_x4", proc = read_x4 },
+    .{ name = "read_1x2", proc = read_1x2 },
+    .{ name = "read_8x2", proc = read_8x2 },
 ];
 
 main :: () {
