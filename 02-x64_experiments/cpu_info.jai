@@ -19,6 +19,7 @@
         cacheline_size := get_cacheline_size();
 
         eax, ebx, ecx, edx = get_cpuid_leaf(0x1);
+        family, model, stepping := get_cpuid_processor_info();
         has_pat            := !!(edx & (1 << 16));
         has_clflush        := !!(edx & (1 << 19));
         has_mmx            := !!(edx & (1 << 23));
@@ -35,6 +36,9 @@
         print("CPU Basic Info/Features:\n");
         print("========================\n");
         print("manufacturer id: '%'\n", cpu_manufacturer_id_string);
+        print("family id:        %\n", family);
+        print("model:            %\n", model);
+        print("stepping id:      %\n", stepping);
         print("cacheline size:   % bytes\n", cacheline_size);
         print("has PAT:          %\n", has_pat);
         print("has CLFLUSH:      %\n", has_clflush);

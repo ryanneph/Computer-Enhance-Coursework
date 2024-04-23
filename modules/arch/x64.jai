@@ -57,6 +57,24 @@ get_cpuid_manufacturer_id_string :: () -> string {
     return cast(string) cpu_manufacturer_id_data;
 }
 
+get_cpuid_processor_info :: () -> (family: u32, model: u32, stepping: u32) {
+    eax, _, _, _ := get_cpuid_leaf(0x1);
+
+    family_id   := (eax >> 8) & 0xf;
+    model       := (eax >> 4) & 0xf;
+    stepping_id := (eax     ) & 0xf;
+
+    if family_id == 0x6 || family_id == 0xf {
+        model = ((eax >> 12) & 0xf0) | model;
+    }
+
+    if (family_id == 0xf) {
+        family_id = ((eax >> 16) & 0xff0) | family_id;
+    }
+
+    return family_id, model, stepping_id;
+}
+
 get_cacheline_size :: () -> u64 {
     max_basic_leaf := get_max_cpuid_leaves();
     if 0x1 > max_basic_leaf {
