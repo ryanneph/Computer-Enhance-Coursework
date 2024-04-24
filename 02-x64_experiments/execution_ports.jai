@@ -10,6 +10,12 @@ read_8x3 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 read_8x4 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 read_1x16 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 
+write_8x1 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+write_8x2 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+write_8x3 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+write_8x4 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+write_1x16 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+
 
 Test_Proc :: #type (dest: *u8, count: u64) #c_call;
 Test :: struct {
@@ -23,6 +29,12 @@ tests := Test.[
     .{ name = "read_8x3", proc = read_8x3 },
     .{ name = "read_8x4", proc = read_8x4 },
     .{ name = "read_1x16", proc = read_1x16 },
+
+    .{ name = "write_8x1", proc = write_8x1 },
+    .{ name = "write_8x2", proc = write_8x2 },
+    .{ name = "write_8x3", proc = write_8x3 },
+    .{ name = "write_8x4", proc = write_8x4 },
+    .{ name = "write_1x16", proc = write_1x16 },
 ];
 
 main :: () {
