@@ -28,18 +28,19 @@ Test :: struct {
 }
 tests := Test.[
     .{ name = "read_4x2", proc = read_4x2 },
-    .{ name = "read_8x2", proc = read_8x2 },
-    .{ name = "read_16x2", proc = read_16x2 },
-    .{ name = "read_32x2", proc = read_32x2 },
-
     .{ name = "read_4x3", proc = read_4x3 },
-    .{ name = "read_8x3", proc = read_8x3 },
-    .{ name = "read_16x3", proc = read_16x3 },
-    .{ name = "read_32x3", proc = read_32x3 },
-
     .{ name = "read_4x4", proc = read_4x4 },
+
+    .{ name = "read_8x2", proc = read_8x2 },
+    .{ name = "read_8x3", proc = read_8x3 },
     .{ name = "read_8x4", proc = read_8x4 },
+
+    .{ name = "read_16x2", proc = read_16x2 },
+    .{ name = "read_16x3", proc = read_16x3 },
     .{ name = "read_16x4", proc = read_16x4 },
+
+    .{ name = "read_32x2", proc = read_32x2 },
+    .{ name = "read_32x3", proc = read_32x3 },
     .{ name = "read_32x4", proc = read_32x4 },
 ];
 
@@ -49,7 +50,7 @@ main :: () {
     lock_memory_range(dest, byte_count); // pre-fault all memory pages
 
     for *test: tests {
-        test.tester = repetition_test_init(max_iters=100);
+        test.tester = repetition_test_init(max_iters=200);
     }
 
     for test: tests {
