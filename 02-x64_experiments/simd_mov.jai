@@ -19,6 +19,10 @@ read_8x4 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 read_16x4 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 read_32x4 :: (dest: *u8, count: u64) #c_call #foreign libasm;
 
+read_64x2 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+read_64x3 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+read_64x4 :: (dest: *u8, count: u64) #c_call #foreign libasm;
+
 
 Test_Proc :: #type (dest: *u8, count: u64) #c_call;
 Test :: struct {
@@ -42,6 +46,11 @@ tests := Test.[
     .{ name = "read_32x2", proc = read_32x2 },
     .{ name = "read_32x3", proc = read_32x3 },
     .{ name = "read_32x4", proc = read_32x4 },
+
+    // these will crash if AVX512 is not supported
+    // .{ name = "read_64x2", proc = read_64x2 },
+    // .{ name = "read_64x3", proc = read_64x3 },
+    // .{ name = "read_64x4", proc = read_64x4 },
 ];
 
 main :: () {

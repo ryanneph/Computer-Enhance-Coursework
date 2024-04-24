@@ -16,6 +16,10 @@ global read_8x4
 global read_16x4
 global read_32x4
 
+global read_64x2
+global read_64x3
+global read_64x4
+
 section .text
 
 ; rdi - data pointer
@@ -138,5 +142,35 @@ read_32x4:
     vmovdqu ymm2, [rdi + 64]
     vmovdqu ymm3, [rdi + 96]
     sub rsi, 128
+    jnle .loop
+    ret
+
+read_64x2:
+    align 64
+.loop:
+    vmovdqu64 zmm0, [rdi]
+    vmovdqu64 zmm1, [rdi + 64]
+    sub rsi, 128
+    jnle .loop
+    ret
+
+read_64x3:
+    align 64
+.loop:
+    vmovdqu64 zmm0, [rdi]
+    vmovdqu64 zmm1, [rdi + 64]
+    vmovdqu64 zmm2, [rdi + 128]
+    sub rsi, 196
+    jnle .loop
+    ret
+
+read_64x4:
+    align 64
+.loop:
+    vmovdqu64 zmm0, [rdi]
+    vmovdqu64 zmm1, [rdi + 64]
+    vmovdqu64 zmm2, [rdi + 128]
+    vmovdqu64 zmm3, [rdi + 196]
+    sub rsi, 256
     jnle .loop
     ret
