@@ -37,6 +37,24 @@ PAGE_SIZE_1GB: u64 : #run (1 * 1024 * 1024 * 1024);
         ret := munmap(addr, page_count * PAGE_SIZE);
     }
 
+    // mlock tends to pre-fault all pages in a virtual address range, becuase it initially ensures that
+    // the entire range is mapped to physical memory pages and guarantees that none of the range will
+    // ever get evicted or paged to disk. Thus it is often incorrectly believed to it is guaranteed to
+    // both pre-fault all pages mapped to the range and prevent later soft faults.
+    //
+    // The truth is that mlock'd pages are guaranteed NOT to "major fault" (triggering an IO mapping),
+    // but are not guarateed NOT to "minor fault" (the normal system memory type of fault).
+    // Even mlock'd pages may be "migrated" as a way for the kernel to "de-fragment" the memory space to
+    // make room for contiguous physical pages in support of large or huge pages.
+    // They may also be "migrated" as a part of the scheduler performing NUMA balancing.
+    //
+    // mlock both pre-faults and locks pages in memory (aside from the small gotchas above), but it also
+    // disables the system's ability to effectively handle full-system OOM situations. Thus the amount of
+    // "lockable" memory may be limited (i.e. `ulimit -l` or `getrlimit(RLIMIT_MEMLOCK)`). So it is not
+    // always possible, or at the very least requires checking the limit and iteratively performing `mlock`
+    // in smaller chunks.
+    //
+    // If all you want is prefaulting, just so a wide simd write-loop and move on...
     lock_memory_range :: (addr: *void, count: u64) {
         mlock(addr, count);
     }
