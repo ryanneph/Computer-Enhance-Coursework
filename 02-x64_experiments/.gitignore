@@ -7,3 +7,4 @@ pointer_decomposition
 cpu_frontend
 cpu_info
 execution_ports
+cache_sizes

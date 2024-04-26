@@ -1,5 +1,9 @@
 #import "Basic";
 
+Kilobyte :: (count: $T) -> T #expand { return count * 1024; }
+Megabyte :: (count: $T) -> T #expand { return count * 1048576; }
+Gigabyte :: (count: $T) -> T #expand { return count * 1073741824; }
+
 PAGE_SIZE: u64 : 4096;
 PAGE_SIZE_2MB: u64 : #run (2 * 1024 * 1024);
 PAGE_SIZE_1GB: u64 : #run (1 * 1024 * 1024 * 1024);
