@@ -116,3 +116,20 @@ decompose_pointer_1gb_page :: (pointer: *void) -> Pointer_Decomposition {
 
     return decomp;
 }
+
+pretty_print_byte_size :: (size: u64) -> string {
+    suffix :: string.["b", "kb", "mb", "gb", "tb"];
+
+    current := size;
+    next := size;
+    i := 0;
+    while i < suffix.count && next > 0 {
+        current = next;
+        next = current / 1024;
+        i += 1;
+    }
+
+    // allocate using context.allocator
+    s := sprint("% %", current, suffix[i-1]);
+    return s;
+}

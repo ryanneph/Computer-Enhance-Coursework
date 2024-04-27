@@ -98,10 +98,17 @@ repetition_test_report :: (using test: *Repetition_Test, overwrite_previous_outp
     print_record(*avg_record, "Avg");
 }
 
+repetition_test_get_best :: (using test: *Repetition_Test) -> Repetition_Test_Record {
+    return min_record;
+}
+
 
 #scope_file
 U64_MIN :: 0;
 U64_MAX :: 0xFFFFFFFF_FFFFFFFF;
+
+Megabyte :: (count: $T) -> T #expand { return count * 1048576; }
+Gigabyte :: (count: $T) -> T #expand { return count * 1073741824; }
 
 update_avg_record :: (using test: *Repetition_Test) {
     if cum_count > 0 {
@@ -128,8 +135,8 @@ print_record :: (using record: *Repetition_Test_Record, label: string) {
     gigabytes_per_second: float64 = 0.0;
     page_faults_per_second: float64 = 0.0;
     if cpu_timer > 0 {
-        megabytes = cast(float64) byte_count / (1024.0 * 1024.0);
-        gigabytes = megabytes / 1024.0;
+        megabytes = cast(float64) byte_count / Megabyte(1);
+        gigabytes = cast(float64) byte_count / Gigabyte(1);
         gigabytes_per_second = gigabytes / seconds;
         page_faults_per_second = cast(float64) page_fault_count / seconds;
     }
