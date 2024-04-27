@@ -42,7 +42,6 @@ main :: () {
     // pre-fault all memory_pages and keep resident in physical mem
     lock_memory_range(buf, buf_size);
 
-
     results: [..]Result;
     for mask_shift: 10..30 {
         touch_size := cast(u64) (1 << mask_shift);
