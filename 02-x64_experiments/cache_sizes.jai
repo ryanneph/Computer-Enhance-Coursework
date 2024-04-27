@@ -4,7 +4,7 @@
 #import,dir "../modules/memory_utils";
 
 libasm :: #library,no_dll "cache_sizes";
-read_wrapping_pow2 :: (dest: *u8, count: u64, offset_mask: u64) #c_call #foreign libasm;
+read_wrapping_pow2_32x8 :: (dest: *u8, count: u64, offset_mask: u64) #c_call #foreign libasm;
 
 
 main :: () {
@@ -21,10 +21,10 @@ main :: () {
                 touch_size, xx touch_size / Kilobyte(1), xx touch_size / Megabyte(1),
                 xx touch_size / Gigabyte(1));
         print("------------------------------------------------------------\n");
-        tester := repetition_test_init(max_iters=500);
+        tester := repetition_test_init(max_iters=1000);
         while repetition_test_is_running(*tester) {
             repetition_test_start(*tester);
-            read_wrapping_pow2(buf, buf_size, mask);
+            read_wrapping_pow2_32x8(buf, buf_size, mask);
             repetition_test_stop(*tester, buf_size);
         }
         print("------------------------------------------------------------\n\n");
