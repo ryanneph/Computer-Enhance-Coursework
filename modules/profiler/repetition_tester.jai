@@ -25,6 +25,8 @@ Repetition_Test :: struct {
     // stats
     min_record: Repetition_Test_Record;
     max_record: Repetition_Test_Record;
+    avg_record: Repetition_Test_Record;
+
     cum_record: Repetition_Test_Record;
     cum_count: u64;
 }
@@ -63,6 +65,7 @@ repetition_test_stop :: (using test: *Repetition_Test, count_for_bandwidth: u64)
     assert(state == .STARTED);
     if (max_iters > 0 && iters >= max_iters) {
         state = .FINISHED;
+        update_avg_record(test);
     } else {
         state = .STOPPED;
     }
@@ -85,19 +88,10 @@ repetition_test_stop :: (using test: *Repetition_Test, count_for_bandwidth: u64)
     repetition_test_report(test, overwrite_previous_output=true);
 }
 
-clear_previous :: () {
-    print("\x1b[3F"); // move up 3 lines and to beginning
-}
-
 repetition_test_report :: (using test: *Repetition_Test, overwrite_previous_output := false) {
     if iters>1 && overwrite_previous_output  clear_previous();
 
-    avg_record: Repetition_Test_Record;
-    if cum_count > 0 {
-        avg_record.cpu_timer        = cum_record.cpu_timer        / cum_count;
-        avg_record.byte_count       = cum_record.byte_count       / cum_count;
-        avg_record.page_fault_count = cum_record.page_fault_count / cum_count;
-    }
+    update_avg_record(test);
 
     print_record(*min_record, "Min");
     print_record(*max_record, "Max");
@@ -108,6 +102,18 @@ repetition_test_report :: (using test: *Repetition_Test, overwrite_previous_outp
 #scope_file
 U64_MIN :: 0;
 U64_MAX :: 0xFFFFFFFF_FFFFFFFF;
+
+update_avg_record :: (using test: *Repetition_Test) {
+    if cum_count > 0 {
+        avg_record.cpu_timer        = cum_record.cpu_timer        / cum_count;
+        avg_record.byte_count       = cum_record.byte_count       / cum_count;
+        avg_record.page_fault_count = cum_record.page_fault_count / cum_count;
+    }
+}
+
+clear_previous :: () {
+    print("\x1b[3F"); // move up 3 lines and to beginning
+}
 
 print_record :: (using record: *Repetition_Test_Record, label: string) {
     FMT :: (x: Any, precision: s64 = 3) -> FormatFloat #expand {
