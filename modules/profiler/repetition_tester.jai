@@ -16,11 +16,15 @@ Test_State :: enum {
 Repetition_Test :: struct {
     state: Test_State;
     iters: u64;
-    max_iters: u64;
 
     // tracked for each test run, then moved to stats
     timer: Timer;
     initial_page_fault_count:u64;
+
+    // stopping condition
+    improve_threshold: u64;
+    consecutive_without_improvement: u64;
+    max_iters: u64;
 
     // stats
     min_record: Repetition_Test_Record;
@@ -31,11 +35,12 @@ Repetition_Test :: struct {
     cum_count: u64;
 }
 
-repetition_test_init :: (max_iters: u64 = 100) -> Repetition_Test {
+repetition_test_init :: (max_iters: u64 = 1000, improve_threshold: u64 = 200) -> Repetition_Test {
     assert(max_iters > 0);
 
     test: Repetition_Test;
     test.state = .STOPPED;
+    test.improve_threshold = improve_threshold;
     test.max_iters = max_iters;
     test.min_record = .{ U64_MAX, 0, 0 };
     test.max_record = .{ U64_MIN, 0, 0 };
@@ -54,22 +59,22 @@ repetition_test_start :: (using test: *Repetition_Test) {
     state = .STARTED;
 
     iters += 1;
+    initial_page_fault_count = page_fault_counter();
     timer_reset(*timer);
     timer_start(*timer);
-    initial_page_fault_count = page_fault_counter();
 }
 
 repetition_test_stop :: (using test: *Repetition_Test, count_for_bandwidth: u64) {
     timer_stop(*timer);
-
     assert(state == .STARTED);
-    if (max_iters > 0 && iters >= max_iters) {
-        state = .FINISHED;
-        update_avg_record(test);
-    } else {
-        state = .STOPPED;
-    }
 
+    // early stopping criteria
+    // reset counter on improved, otherwise increment
+    not_improved := cast(u64) (min_record.cpu_timer <= timer.elapsed);
+    not_improved_mask := ~(not_improved - 1); // 1s: not-improved, 0s: improved
+    consecutive_without_improvement = (consecutive_without_improvement + not_improved) & not_improved_mask;
+
+    // stats tracking
     record: Repetition_Test_Record;
     record.cpu_timer = timer.elapsed;
     record.byte_count = count_for_bandwidth;
@@ -85,17 +90,30 @@ repetition_test_stop :: (using test: *Repetition_Test, count_for_bandwidth: u64)
     cum_record.page_fault_count += record.page_fault_count;
     cum_count += 1;
 
+    // update test state
+    reached_max_iters := max_iters > 0 && iters >= max_iters;
+    if (reached_max_iters || reached_progress_floor(test)) {
+        state = .FINISHED;
+        update_avg_record(test);
+    } else {
+        state = .STOPPED;
+    }
+
     repetition_test_report(test, overwrite_previous_output=true);
 }
 
 repetition_test_report :: (using test: *Repetition_Test, overwrite_previous_output := false) {
-    if iters>1 && overwrite_previous_output  clear_previous();
+    if iters>1 && overwrite_previous_output  clear_previous_lines(3);
 
     update_avg_record(test);
 
     print_record(*min_record, "Min");
     print_record(*max_record, "Max");
     print_record(*avg_record, "Avg");
+}
+
+repetition_test_get_iters :: (using test: *Repetition_Test) -> u64 {
+    return iters;
 }
 
 repetition_test_get_best :: (using test: *Repetition_Test) -> Repetition_Test_Record {
@@ -110,6 +128,10 @@ U64_MAX :: 0xFFFFFFFF_FFFFFFFF;
 Megabyte :: (count: $T) -> T #expand { return count * 1048576; }
 Gigabyte :: (count: $T) -> T #expand { return count * 1073741824; }
 
+reached_progress_floor :: (using test: *Repetition_Test) -> bool {
+    return consecutive_without_improvement >= improve_threshold;
+}
+
 update_avg_record :: (using test: *Repetition_Test) {
     if cum_count > 0 {
         avg_record.cpu_timer        = cum_record.cpu_timer        / cum_count;
@@ -118,8 +140,8 @@ update_avg_record :: (using test: *Repetition_Test) {
     }
 }
 
-clear_previous :: () {
-    print("\x1b[3F"); // move up 3 lines and to beginning
+clear_previous_lines :: (count: s64) {
+    print("\x1b[%F", count); // move up 3 lines and to beginning
 }
 
 print_record :: (using record: *Repetition_Test_Record, label: string) {
