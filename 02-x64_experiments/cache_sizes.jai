@@ -47,18 +47,15 @@ main :: () {
         touch_size := cast(u64) (1 << mask_shift);
         mask := touch_size - 1;
 
-        print("Running test 2^% (% b, % kb, % mb, % gb)\n", mask_shift,
+        name := sprint("2^% (% b, % kb, % mb, % gb)", mask_shift,
                 touch_size, xx touch_size / Kilobyte(1), xx touch_size / Megabyte(1),
                 xx touch_size / Gigabyte(1));
-        print("------------------------------------------------------------\n");
-        tester := repetition_test_init();
+        tester := repetition_test_init(name);
         while repetition_test_is_running(*tester) {
             repetition_test_start(*tester);
             read_wrapping_pow2_32x8(buf, buf_size, mask);
             repetition_test_stop(*tester, buf_size);
         }
-        print("------------------------------------------------------------\n");
-        print("(after % iters)\n\n", repetition_test_get_iters(*tester));
 
         best := repetition_test_get_best(*tester);
         res := Result.{ touch_size, best };

@@ -59,18 +59,12 @@ main :: () {
     lock_memory_range(dest, byte_count); // pre-fault all memory pages
 
     for *test: tests {
-        test.tester = repetition_test_init(max_iters=200);
-    }
-
-    for test: tests {
-        print("Running test '%' from iter=%\n", test.name, test.tester.iters);
-        print("------------------------------------------------------------\n");
+        test.tester = repetition_test_init(test.name);
         while repetition_test_is_running(*test.tester) {
             repetition_test_start(*test.tester);
             test.proc(dest, byte_count);
             repetition_test_stop(*test.tester, byte_count);
         }
-        print("------------------------------------------------------------\n\n");
     }
 }
 

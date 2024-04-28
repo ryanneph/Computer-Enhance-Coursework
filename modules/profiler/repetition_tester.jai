@@ -14,8 +14,13 @@ Test_State :: enum {
 }
 
 Repetition_Test :: struct {
+    name: string;
     state: Test_State;
     iters: u64;
+
+    // logging
+    do_pre_print: bool;
+    quiet: bool;
 
     // tracked for each test run, then moved to stats
     timer: Timer;
@@ -35,11 +40,14 @@ Repetition_Test :: struct {
     cum_count: u64;
 }
 
-repetition_test_init :: (max_iters: u64 = 1000, improve_threshold: u64 = 200) -> Repetition_Test {
+repetition_test_init :: (name: string, max_iters: u64 = 1000, improve_threshold: u64 = 200, quiet := false) -> Repetition_Test {
     assert(max_iters > 0);
 
     test: Repetition_Test;
+    test.name = name;
     test.state = .STOPPED;
+    test.do_pre_print = true;
+    test.quiet = quiet;
     test.improve_threshold = improve_threshold;
     test.max_iters = max_iters;
     test.min_record = .{ U64_MAX, 0, 0 };
@@ -57,6 +65,11 @@ repetition_test_is_running :: (using test: *Repetition_Test) -> bool {
 repetition_test_start :: (using test: *Repetition_Test) {
     assert(state == .STOPPED);
     state = .STARTED;
+
+    if !quiet && do_pre_print {
+        pre_print(test);
+        do_pre_print = false;
+    }
 
     iters += 1;
     initial_page_fault_count = page_fault_counter();
@@ -90,23 +103,29 @@ repetition_test_stop :: (using test: *Repetition_Test, count_for_bandwidth: u64)
     cum_record.page_fault_count += record.page_fault_count;
     cum_count += 1;
 
+    update_avg_record(test);
+    if !quiet  during_print(test);
+
     // update test state
     reached_max_iters := max_iters > 0 && iters >= max_iters;
     if (reached_max_iters || reached_progress_floor(test)) {
         state = .FINISHED;
-        update_avg_record(test);
+        if !quiet  post_print(test);
     } else {
         state = .STOPPED;
     }
 
-    repetition_test_report(test, overwrite_previous_output=true);
 }
 
-repetition_test_report :: (using test: *Repetition_Test, overwrite_previous_output := false) {
-    if iters>1 && overwrite_previous_output  clear_previous_lines(3);
+repetition_test_set_max_iters :: (using test: *Repetition_Test, new_max: u64) {
+    if new_max > iters && state == .FINISHED {
+        state = .STOPPED;
+        do_pre_print = true;
+    }
+    max_iters = new_max;
+}
 
-    update_avg_record(test);
-
+repetition_test_report :: (using test: *Repetition_Test) {
     print_record(*min_record, "Min");
     print_record(*max_record, "Max");
     print_record(*avg_record, "Avg");
@@ -129,7 +148,8 @@ Megabyte :: (count: $T) -> T #expand { return count * 1048576; }
 Gigabyte :: (count: $T) -> T #expand { return count * 1073741824; }
 
 reached_progress_floor :: (using test: *Repetition_Test) -> bool {
-    return consecutive_without_improvement >= improve_threshold;
+    return improve_threshold > 0 &&
+        consecutive_without_improvement >= improve_threshold;
 }
 
 update_avg_record :: (using test: *Repetition_Test) {
@@ -138,6 +158,24 @@ update_avg_record :: (using test: *Repetition_Test) {
         avg_record.byte_count       = cum_record.byte_count       / cum_count;
         avg_record.page_fault_count = cum_record.page_fault_count / cum_count;
     }
+}
+
+pre_print :: (using test: *Repetition_Test) {
+    print("Running test %\n", name);
+    print("------------------------------------------------------------\n");
+    repetition_test_report(test);
+}
+
+during_print :: (using test: *Repetition_Test) {
+    clear_previous_lines(3);
+    update_avg_record(test);
+    repetition_test_report(test);
+}
+
+post_print :: (using test: *Repetition_Test) {
+    print("------------------------------------------------------------\n");
+    reason := ifx iters == max_iters then "max iters reached" else "no further improvement";
+    print("(% after % iters)\n\n", reason, iters);
 }
 
 clear_previous_lines :: (count: s64) {
