@@ -120,16 +120,17 @@ decompose_pointer_1gb_page :: (pointer: *void) -> Pointer_Decomposition {
 pretty_print_byte_size :: (size: u64) -> string {
     suffix :: string.["b", "kb", "mb", "gb", "tb"];
 
-    current := size;
-    next := size;
+    current := cast(float64)size;
+    next := cast(float64)size;
     i := 0;
-    while i < suffix.count && next > 0 {
+    while i < suffix.count && next > 1.0 {
         current = next;
-        next = current / 1024;
+        next = current / 1024.0;
         i += 1;
     }
 
     // allocate using context.allocator
-    s := sprint("% %", current, suffix[i-1]);
+    FMT :: #bake_arguments formatFloat(trailing_width=3, zero_removal=.NO);
+    s := sprint("% %", FMT(current), suffix[i-1]);
     return s;
 }
