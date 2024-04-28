@@ -1,11 +1,11 @@
-global read_wrapping_pow2_32x8
+global read_wrapping_pow2_32x12
 
 section .text
 
 ; rdi - read base pointer
 ; rsi - read byte count
 ; rdx - read offset mask (must be pow2)
-read_wrapping_pow2_32x8:
+read_wrapping_pow2_32x12:
     ; 32-byte-wide SIMD read from base pointer + masked offset to register
     ; r10 - read offset
     ; r11 - pointer
@@ -27,11 +27,16 @@ read_wrapping_pow2_32x8:
     vmovdqu ymm0, [r11 + 0xc0]
     vmovdqu ymm0, [r11 + 0xe0]
 
+    vmovdqu ymm0, [r11 + 0x100]
+    vmovdqu ymm0, [r11 + 0x120]
+    vmovdqu ymm0, [r11 + 0x140]
+    vmovdqu ymm0, [r11 + 0x160]
+
     ; advance offset
-    add r10, 0x100
+    add r10, 0x180
     and r10, rdx
 
     ; decrement counter
-    sub rsi, 0x100
+    sub rsi, 0x180
     jnle .loop
     ret
