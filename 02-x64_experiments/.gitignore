@@ -7,4 +7,5 @@ pointer_decomposition
 cpu_frontend
 cpu_info
 execution_ports
+simd_mov
 cache_sizes
