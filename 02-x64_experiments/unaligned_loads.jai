@@ -9,6 +9,7 @@ read_32x4 :: (src: *u8, count: u64, offset_mask: u64) #c_call #foreign libasm;
 
 Result :: struct {
     name: string;
+    region_size: u64;
     offset: u64;
     gigabytes_per_second: float;
 };
@@ -30,7 +31,7 @@ print_results_table :: (results: []Result) {
 
     print("RESULTS:\n");
     print("offset  throughput (gb/s)  meter                           test name\n");
-    print("------  -----------------  ------------------------------  ---------------------------\n");
+    print("------  -----------------  ------------------------------  -----------------------------------------------\n");
     for results {
         using it;
         print("    %             %  ",
@@ -42,35 +43,52 @@ print_results_table :: (results: []Result) {
         print("  %\n", name);
     }
 }
+print_csv :: (results: []Result) {
+    print("RESULTS (CSV):\n");
+    print("--------------\n");
+    print("region_size,alignment,gigabytes_per_second\n");
+    for results {
+        using it;
+        print("%,%,%\n", region_size, offset, gigabytes_per_second);
+    }
+}
 
+is_power_of_two :: (a: u64) -> bool { return !(a & (a-1)); }
 main :: () {
     buf_size := cast(u64) Gigabyte(1);
     buf := alloc_pages(buf_size / PAGE_SIZE);
     // pre-fault all memory_pages and keep resident in physical mem
     lock_memory_range(buf, buf_size);
 
-    offset_mask := cast(u64)(1 << 10) - 1;
+    region_sizes := s64.[ Kilobyte(32), Kilobyte(256), Megabyte(8), Gigabyte(1), ];
 
     results: [..]Result;
-    for 0..64 {
-        addr_offset := cast(u64)it;
-        actual_read_size := buf_size - addr_offset;
+    for region_sizes {
+        region_size := cast(u64)it;
+        assert(is_power_of_two(region_size));
+        offset_mask := region_size - 1;
+        for 0..64 {
+            addr_offset := cast(u64)it;
+            actual_read_size := buf_size - addr_offset;
 
-        name := sprint("unaligned_loads (offset=%)", formatInt(addr_offset, minimum_digits=2));
-        tester := repetition_test_init(name, improve_threshold=500, max_iters=2000);
-        while repetition_test_is_running(*tester) {
-            repetition_test_start(*tester);
-            read_32x4(buf + addr_offset, actual_read_size, offset_mask);
-            repetition_test_stop(*tester, actual_read_size);
+            name := sprint("unaligned_loads (region=%, offset=%)", region_size, addr_offset);
+            tester := repetition_test_init(name, improve_threshold=250, max_iters=1000);
+            while repetition_test_is_running(*tester) {
+                repetition_test_start(*tester);
+                read_32x4(buf + addr_offset, actual_read_size, offset_mask);
+                repetition_test_stop(*tester, actual_read_size);
+            }
+            reset_temporary_storage();
+
+            best := repetition_test_get_best(*tester);
+            entry := Result.{name, region_size, addr_offset, cast(float)gigabytes_per_second(best)};
+            array_add(*results, entry);
         }
-        reset_temporary_storage();
-
-        best := repetition_test_get_best(*tester);
-        entry := Result.{name, addr_offset, cast(float)gigabytes_per_second(best)};
-        array_add(*results, entry);
     }
 
     print_results_table(results);
+    print("\n");
+    print_csv(results);
 }
 
 build :: () {
