@@ -139,6 +139,19 @@ repetition_test_get_best :: (using test: *Repetition_Test) -> Repetition_Test_Re
     return min_record;
 }
 
+gigabytes_per_second :: (using record: Repetition_Test_Record) -> float64 {
+    cpu_freq := get_cpu_timer_freq();
+    seconds := cast(float64) cpu_timer / cpu_freq;
+
+    gigabytes_per_second: float64 = 0.0;
+    if cpu_timer > 0 {
+        gigabytes := cast(float64) byte_count / Gigabyte(1);
+        gigabytes_per_second = gigabytes / seconds;
+    }
+
+    return gigabytes_per_second;
+}
+
 
 #scope_file
 U64_MIN :: 0;
@@ -174,7 +187,7 @@ during_print :: (using test: *Repetition_Test) {
 
 post_print :: (using test: *Repetition_Test) {
     print("------------------------------------------------------------\n");
-    reason := ifx iters == max_iters then "max iters reached" else "no further improvement";
+    reason := ifx iters >= max_iters then "max iters reached" else "no further improvement";
     print("(% after % iters)\n\n", reason, iters);
 }
 
