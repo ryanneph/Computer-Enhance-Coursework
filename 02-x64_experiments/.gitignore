@@ -9,3 +9,4 @@ cpu_info
 execution_ports
 simd_mov
 cache_sizes
+unaligned_loads
