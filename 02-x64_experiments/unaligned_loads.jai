@@ -53,7 +53,6 @@ print_csv :: (results: []Result) {
     }
 }
 
-is_power_of_two :: (a: u64) -> bool { return !(a & (a-1)); }
 main :: () {
     buf_size := cast(u64) Gigabyte(1);
     buf := alloc_pages(buf_size / PAGE_SIZE);

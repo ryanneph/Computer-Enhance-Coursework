@@ -1,4 +1,5 @@
 #import "Basic";
+#import "System";
 
 Kilobyte :: (count: $T) -> T #expand { return count * 1024; }
 Megabyte :: (count: $T) -> T #expand { return count * 1048576; }
@@ -9,17 +10,41 @@ PAGE_SIZE_2MB: u64 : #run (2 * 1024 * 1024);
 PAGE_SIZE_1GB: u64 : #run (1 * 1024 * 1024 * 1024);
 
 #if OS == .LINUX {
+    #scope_file
     #import "POSIX";
 
+    mlock :: (addr: *void, len: size_t) -> s32 #foreign libc;
+    munlock :: (addr: *void, len: size_t) -> s32 #foreign libc;
+    sbrk :: (incr: s64) -> *void #foreign libc;
+    libc :: #system_library "libc";
+
+    print_syscall_error :: (what: string) {
+        err, errstr := get_error_value_and_string();
+        print("error: % failed with err=%: %\n", what, err, errstr);
+    }
+
+    #scope_export
     MAP_HUGETLB :: 0x4000;
     MAP_HUGE_SHIFT :: 26;
     MAP_HUGE_2MB :: (21 << MAP_HUGE_SHIFT);
     MAP_HUGE_1GB :: (30 << MAP_HUGE_SHIFT);
 
-    alloc_pages :: (page_count: u64) -> *void {
-        addr := mmap(null, page_count * PAGE_SIZE, PROT_READ | PROT_WRITE,
-            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        assert(addr != MAP_FAILED);
+    alloc_pages :: (page_count: u64, at_addr: *void = null) -> *void {
+        prot: s32 = PROT_READ | PROT_WRITE;
+        flags: s32 = MAP_PRIVATE | MAP_ANONYMOUS;
+        if at_addr {
+            if cast(u64)at_addr & (PAGE_SIZE-1) != 0 {
+                print("error: at_addr must be PAGE_SIZE-aligned (% bytes)\n", PAGE_SIZE);
+                exit(1);
+            }
+            flags |= MAP_FIXED;
+        }
+
+        addr := mmap(at_addr, page_count * PAGE_SIZE, prot, flags, -1, 0);
+        if addr == MAP_FAILED {
+            print_syscall_error("mmap");
+            exit(1);
+        }
         return addr;
     }
 
@@ -39,6 +64,23 @@ PAGE_SIZE_1GB: u64 : #run (1 * 1024 * 1024 * 1024);
 
     free_pages :: (addr: *void, page_count: u64) {
         ret := munmap(addr, page_count * PAGE_SIZE);
+    }
+
+    // move the "program break" up by `count` bytes
+    //
+    // On linux, the heap begins ~right after the program's .text, .data, and .bss segments and grows "up"
+    // (toward higher addresses). The end of the heap is denoted by the "program break", which can be
+    // affected directly by use of the brk(addr) and sbrk(increment) syscalls.
+    // Note, however that the behavior of those syscall is unspecified if the program also uses
+    // other memory functions (e.g. malloc/free, mmap).
+    advance_heap_pointer :: (count: s64) -> prior_addr: *void {
+        FAILURE :: cast(*void) -1;
+        prior_addr := sbrk(count);
+        if prior_addr == FAILURE {
+            print_syscall_error("sbrk");
+            return null;
+        }
+        return prior_addr;
     }
 
     // mlock tends to pre-fault all pages in a virtual address range, becuase it initially ensures that
@@ -66,16 +108,11 @@ PAGE_SIZE_1GB: u64 : #run (1 * 1024 * 1024 * 1024);
     unlock_memory_range :: (addr: *void, count: u64) {
         munlock(addr, count);
     }
-
-    #scope_file
-    mlock :: (addr: *void, len: size_t) -> s32 #foreign libc;
-    munlock :: (addr: *void, len: size_t) -> s32 #foreign libc;
-    libc :: #system_library "libc";
-    #scope_export
 } else {
     #assert("platform not supported");
 }
 
+#scope_export
 Pointer_Decomposition :: struct {
     pml4e_index: u16; // page-map-level-4 (bits 39-47)
     pdpte_index: u16; // page-directory-pointer-table (bits 30-38)
@@ -123,7 +160,7 @@ pretty_print_byte_size :: (size: u64) -> string {
     current := cast(float64)size;
     next := cast(float64)size;
     i := 0;
-    while i < suffix.count && next > 1.0 {
+    while i < suffix.count && next >= 1.0 {
         current = next;
         next = current / 1024.0;
         i += 1;
@@ -134,3 +171,5 @@ pretty_print_byte_size :: (size: u64) -> string {
     s := sprint("% %", FMT(current), suffix[i-1]);
     return s;
 }
+
+is_power_of_two :: (a: u64) -> bool { return !(a & (a-1)); }
