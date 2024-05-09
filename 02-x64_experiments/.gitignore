@@ -10,3 +10,4 @@ execution_ports
 simd_mov
 cache_sizes
 unaligned_loads
+cache_set_eviction
