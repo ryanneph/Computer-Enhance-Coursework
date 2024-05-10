@@ -1,4 +1,4 @@
-global read_32x8
+global read_cacheline_strided
 
 section .text
 
@@ -9,43 +9,27 @@ section .text
 ;
 ; proceed in this way for a specified number of cachelines, then reset and
 ; repeat a specified number of times.
-read_32x8:
+read_cacheline_strided:
     align 64
-    %define BUF rdi
-    %define BUF_SIZE rsi
-    %define LINE_COUNT rdx
-    %define INCREMENT rcx
+    %define SOURCE rdi ; data pointer
+    %define REPEAT_COUNT rsi ; outer loop counter
+    %define LINE_COUNT rdx ; inner loop counter (unique memory read)
+    %define STRIDE rcx ; increment between cacheline reads
 
     %define LINE_REMAIN r10
     %define ADDR r11
-.reset:
-    mov ADDR, BUF
+.outer_loop:
+    mov ADDR, SOURCE
     mov LINE_REMAIN, LINE_COUNT
-.loop:
+.inner_loop:
     ; read cacheline #1 then advance
     vmovdqu ymm0, [ADDR       ]
     vmovdqu ymm1, [ADDR + 0x20]
-    add ADDR, INCREMENT
+    add ADDR, STRIDE
 
-    ; read cacheline #2 then advance
-    vmovdqu ymm0, [ADDR       ]
-    vmovdqu ymm1, [ADDR + 0x20]
-    add ADDR, INCREMENT
+    dec LINE_REMAIN
+    jg .inner_loop
 
-    ; read cacheline #3 then advance
-    vmovdqu ymm0, [ADDR       ]
-    vmovdqu ymm1, [ADDR + 0x20]
-    add ADDR, INCREMENT
-
-    ; read cacheline #4 then advance
-    vmovdqu ymm0, [ADDR       ]
-    vmovdqu ymm1, [ADDR + 0x20]
-    add ADDR, INCREMENT
-
-    sub BUF_SIZE, 0xa0
-    sub LINE_REMAIN, 4
-    jg .loop
-
-    cmp BUF_SIZE, 0
-    jg .reset
+    dec REPEAT_COUNT
+    jg .outer_loop
     ret
