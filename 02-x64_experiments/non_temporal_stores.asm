@@ -16,11 +16,11 @@ mov_32x2:
 .loop:
     ; read cacheline
     vmovdqa ymm0, [READ_ADDR]
-    vmovdqa ymm0, [READ_ADDR + 0x20]
+    vmovdqa ymm1, [READ_ADDR + 0x20]
 
     ; write cacheline (w/ non-temporal hint)
     vmovdqa [DST       ], ymm0
-    vmovdqa [DST + 0x20], ymm0
+    vmovdqa [DST + 0x20], ymm1
 
     ; advance read/write pointers
     add READ_ADDR, 0x40
@@ -53,11 +53,11 @@ mov_32x2_nt:
 .loop:
     ; read cacheline
     vmovdqa ymm0, [READ_ADDR]
-    vmovdqa ymm0, [READ_ADDR + 0x20]
+    vmovdqa ymm1, [READ_ADDR + 0x20]
 
     ; write cacheline (w/ non-temporal hint)
     vmovntdq [DST       ], ymm0
-    vmovntdq [DST + 0x20], ymm0
+    vmovntdq [DST + 0x20], ymm1
 
     ; advance read/write pointers
     add READ_ADDR, 0x40

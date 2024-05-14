@@ -9,7 +9,7 @@ mov_32x2    :: (dst: *void, dst_size: u64, src: *void, src_size: u64) #foreign l
 mov_32x2_nt :: (dst: *void, dst_size: u64, src: *void, src_size: u64) #foreign libasm;
 test_proc_type :: #type (*void, u64, *void, u64) #c_call;
 
-alloc_buffer :: (size_in_bytes: u64) -> *void {
+alloc_buffer :: (size_in_bytes: u64) -> *u8 {
     assert(size_in_bytes % PAGE_SIZE == 0);
 
     page_count := size_in_bytes / PAGE_SIZE;
@@ -32,6 +32,10 @@ main :: () {
 
     read_size := cast(u64) Kilobyte(16);
     read_buf  := alloc_buffer(read_size);
+
+    for 0..read_size-1 {
+        read_buf[it] = cast,no_check(u8) it;
+    }
 
     run_test :: (test_name: string, test_proc: test_proc_type) #expand {
         name := sprint("% (read % / write %)", test_name,
