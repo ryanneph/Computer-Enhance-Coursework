@@ -1,6 +1,12 @@
 #if OS == .LINUX {
+    #scope_file
     #import "System"; // for get_error_value, get_error_string
 
+    RUSAGE_SELF: u32 : 0;
+    getrusage :: (who: u32, usage: *rusage) -> s32 #foreign libc;
+    libc :: #library,system "libc";
+
+    #scope_export
     page_fault_counter :: () -> (count: u64, success: bool) {
         // rusage distinguishes between soft and hard page faults:
         //
@@ -17,7 +23,7 @@
         // calls.
 
         usage: rusage;
-        ret := getrusage(cast(__rusage_who_t) RUSAGE.SELF, *usage);
+        ret := getrusage(RUSAGE_SELF, *usage);
         if (ret != 0) {
             errno, error := get_error_value_and_string();
             print("call to getrusage failed with error (%): %\n", errno, error);

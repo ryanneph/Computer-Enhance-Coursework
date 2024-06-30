@@ -74,6 +74,7 @@ get_cpu_timer_freq :: inline () -> u64 {
     }
 } else #if OS == .LINUX {
     #import "POSIX";
+    CLOCK_MONOTONIC_RAW :: 4;
 
     get_os_timer_freq :: inline () -> u64 {
         // fixed nanosecond output precision, but not guaranteed to be the sampling precision
