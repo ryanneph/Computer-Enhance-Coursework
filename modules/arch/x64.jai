@@ -75,7 +75,13 @@ get_cpuid_processor_info :: () -> (family: u32, model: u32, stepping: u32) {
     return family_id, model, stepping_id;
 }
 
+#scope_file;
+cacheline_size: u64;
+
+#scope_export;
 get_cacheline_size :: () -> u64 {
+    if cacheline_size  return cacheline_size;
+
     max_basic_leaf := get_max_cpuid_leaves();
     if 0x1 > max_basic_leaf {
         print("error: cpuid with leaf 0x1 not supported (max_basic_leaf=%)\n", max_basic_leaf);
@@ -85,10 +91,11 @@ get_cacheline_size :: () -> u64 {
     // EAX=1: Processor Info and Feature Bits
     eax, ebx, ecx, edx := get_cpuid_leaf(0x1);
     has_clflush := cast(bool) ecx & (1 << 19);
-    cacheline_size: u64 = ifx has_clflush
+    size: u64 = ifx has_clflush
         then cast(u64) ((ebx >> 5) & 0x7f8)
         else cast(u64) 0;
 
+    cacheline_size = size;
     return cacheline_size;
 }
 
