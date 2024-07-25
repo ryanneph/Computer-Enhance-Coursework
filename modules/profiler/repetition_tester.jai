@@ -192,7 +192,9 @@ post_print :: (using test: *Repetition_Test) {
 }
 
 clear_previous_lines :: (count: s64) {
-    print("\x1b[%F", count); // move up 3 lines and to beginning
+    for 1..count {
+        print("\e[2K\e[F"); // clear entire line + move to beginning of previous line
+    }
 }
 
 print_record :: (using record: *Repetition_Test_Record, label: string) {
