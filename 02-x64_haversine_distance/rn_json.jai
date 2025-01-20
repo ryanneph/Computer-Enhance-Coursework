@@ -43,8 +43,6 @@ Token :: struct {
 }
 
 lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, success: bool) {
-    profile_block("json lexing");
-
     cursor: s64 = 0;
     level: s64 = 0;
     tokens: [..]Token;
@@ -264,8 +262,6 @@ lex :: (json_string: string, tokenize_whitespace := false) -> ([..]Token, succes
 Json_Node_Storage :: Bucket_Array(Json_Node, 1024);
 
 parse_tokens :: (node_storage: *Json_Node_Storage, tokens: []Token) -> (root: *Json_Node) {
-    profile_block("json parsing");
-
     if !tokens  return null;
 
     throwaway_root: Json_Node;
@@ -446,10 +442,7 @@ parse_json :: (json_string: string, debug_output := false) -> (Json_Document, su
     node_storage: Json_Node_Storage;
     root_node := parse_tokens(*node_storage, tokens);
 
-    {
-        profile_block("json token cleanup");
-        array_free(tokens);
-    }
+    array_free(tokens);
 
     if !root_node {
         print("Failed parsing json\n");
@@ -489,7 +482,7 @@ parse_json_pairs :: (json_string: string, max_pair_count: u64, pairs: *Point_Pai
     json_doc: Json_Document;
     parse_success: bool;
     {
-        profile_block("lex+parse");
+        profile_block("json:lex+parse");
         json_doc, parse_success = parse_json(json_string);
         if !parse_success {
             print("failed to parse json\n");
@@ -499,6 +492,7 @@ parse_json_pairs :: (json_string: string, max_pair_count: u64, pairs: *Point_Pai
 
     pairs_node := find_node_by_name(json_doc.root, "pairs");
     if pairs_node {
+        profile_block("parse floats");
         it := pairs_node.next_child;
         while it != null {
             assert(it.type == .OBJECT);
@@ -508,13 +502,13 @@ parse_json_pairs :: (json_string: string, max_pair_count: u64, pairs: *Point_Pai
 
                 node := find_node_by_name(object_node, member_name);
                 if node {
-                    float_value, success := string_to_float64(node.value_string);
+                    result=, success := string_to_float64(node.value_string);
                     if !success {
                         print("Error parsing float from string '%'.\n", node.value_string);
                         result = 0.0;
                     }
                 }
-                return float_value;
+                return result;
             }
 
             pair := pairs + pair_count;

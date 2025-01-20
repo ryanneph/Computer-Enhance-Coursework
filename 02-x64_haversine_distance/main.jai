@@ -217,13 +217,8 @@ parse_haversine_pairs :: (input_json: string, max_pair_count: u64, pairs: *Point
 }
 
 compute_from_json :: (input_filename: string) {
-    json_string: string;
-    {
-        profile_block("read file");
-        read_success: bool;
-        json_string, read_success = read_full_file(input_filename);
-        assert(read_success);
-    }
+    json_string, read_success := read_full_file(input_filename);
+    assert(read_success);
     defer free(json_string);
 
     min_json_pair_encoding: u64 = 16; // NOTE(ryan): there should be no way to define a pair in JSON without substantially more characters than this
