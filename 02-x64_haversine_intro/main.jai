@@ -253,9 +253,7 @@ show_help_wrapper :: inline () {
 
 main :: () {
     success, args, is_set, free_args := parse_arguments(Program_Args, arg_parse_flags, arg_parse_help_triggers);
-    if !args.mode.count {
-        print("Error: mode was not set.\n");
-        show_help_wrapper();
+    if !success {
         exit(1);
     }
 
@@ -289,6 +287,7 @@ main :: () {
 
         case;
             print("invalid value for '-mode': '%'.\n", args.mode);
+            show_help_wrapper();
             exit(1);
     }
 
