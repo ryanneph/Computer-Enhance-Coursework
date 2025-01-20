@@ -205,9 +205,11 @@ parse_haversine_pairs :: (input_json: string, max_pair_count: u64, pairs: *Point
 
     profile_block("parse_haversine_pairs");
     #if 0 {
-        #load "json.jai";
+        // ryanneph: json parser v1
+        #load "rn_json.jai";
     } else {
-        #load "json2.jai";
+        // cmuratori: json parser ported to jai
+        #load "cm_json.jai";
     }
     pair_count = parse_json_pairs(input_json, max_pair_count, pairs);
 
