@@ -11,12 +11,7 @@ REPORT_MEMORY_LEAKS :: false;
 
 #import "profiler"()(DISABLED=!USE_PROFILER);
 
-#load "json.jai";
-
-Point_Pair :: struct {
-    x0, y0: float64;
-    x1, y1: float64;
-}
+#load "types.jai";
 
 generate_pairs_uniform :: (count: u64) -> [..]Point_Pair {
     pairs: [..]Point_Pair;
@@ -205,6 +200,20 @@ read_full_file :: (filename: string) -> (data: string, success: bool) {
     return contents, success;
 }
 
+parse_haversine_pairs :: (input_json: string, max_pair_count: u64, pairs: *Point_Pair) -> u64 {
+    pair_count: u64;
+
+    profile_block("parse_haversine_pairs");
+    #if 0 {
+        #load "json.jai";
+    } else {
+        #load "json2.jai";
+    }
+    pair_count = parse_json_pairs(input_json, max_pair_count, pairs);
+
+    return pair_count;
+}
+
 compute_from_json :: (input_filename: string) {
     json_string: string;
     {
@@ -215,68 +224,23 @@ compute_from_json :: (input_filename: string) {
     }
     defer free(json_string);
 
-    json_doc: Json_Document;
-    parse_success: bool;
+    min_json_pair_encoding: u64 = 16; // NOTE(ryan): there should be no way to define a pair in JSON without substantially more characters than this
+    max_pair_count := cast(u64) json_string.count / min_json_pair_encoding;
+    pairs := cast(*Point_Pair) alloc(xx max_pair_count * size_of(Point_Pair));
+    defer free(pairs);
+
+    pair_count := parse_haversine_pairs(json_string, max_pair_count, pairs);
+    sum: float64;
     {
-        profile_block("all json processing");
-        json_doc, parse_success = parse_json(json_string);
-        if !parse_success {
-            print("failed to parse json: '%'\n", input_filename);
-            return;
-        }
-    }
-
-    found, pairs_node := find_node_by_name(json_doc.root, "pairs");
-    assert(found);
-
-    sum: float64 = 0.0;
-    count: u64 = 0;
-    it := pairs_node.next_child;
-    while it != null {
-        assert(it.type == .OBJECT);
-
-        get_member :: (object_node: *Json_Node, member_name: string) -> float64 {
-            node: *Json_Node;
-
-            {
-                profile_block("json node lookup");
-                found:, node = find_node_by_name(object_node, member_name);
-                assert(found && node.type == .NUMBER);
-            }
-
-            {
-                profile_block("float parsing");
-                float_value, success := string_to_float64(node.value_string);
-                if !success {
-                    print("Error parsing float from string '%'.\n", node.value_string);
-                    return 0.0;
-                }
-                return float_value;
-            }
-        }
-
-        pair: Point_Pair;
-        pair.x0 = get_member(it, "x0");
-        pair.y0 = get_member(it, "y0");
-        pair.x1 = get_member(it, "x1");
-        pair.y1 = get_member(it, "y1");
-
-        {
-            profile_block("compute");
-            haversine_distance := reference_haversine(pair);
+        profile_block_bandwidth("compute", pair_count * size_of(Point_Pair));
+        for 1..cast(s64, pair_count)-1 {
+            haversine_distance := reference_haversine(pairs[it]);
             sum += haversine_distance;
         }
-
-        // print("Pair: % -> %\n", pair, haversine_distance);
-
-        count += 1;
-        it = it.next_sibling;
     }
+    average: float64 = sum / cast(float64)pair_count;
+    print("Average of % pairs: %\n", pair_count, average);
 
-    average: float64 = sum / cast(float64)count;
-    print("Average of % pairs: %\n", count, average);
-
-    free_memory(json_doc);
 }
 
 arg_parse_flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED | .ALIGN_HELP;

@@ -467,21 +467,68 @@ free_memory :: (doc: Json_Document) {
     bucket_array_reset(*doc.node_storage);
 }
 
-find_node_by_name :: (object_node: *Json_Node, name: string) -> (found: bool, node: *Json_Node) {
-    assert(object_node.type == .OBJECT);
-
-    found := false;
+find_node_by_name :: (object_node: *Json_Node, name: string) -> node: *Json_Node {
     node: *Json_Node;
+
+    assert(object_node.type == .OBJECT);
     it := object_node.next_child;
     while it != null {
         if it.member_name == name {
-            found = true;
             node = it;
             break;
         }
         it = it.next_sibling;
     }
 
-    return found, node;
+    return node;
 }
 
+parse_json_pairs :: (json_string: string, max_pair_count: u64, pairs: *Point_Pair) -> u64 {
+    pair_count: u64;
+
+    json_doc: Json_Document;
+    parse_success: bool;
+    {
+        profile_block("lex+parse");
+        json_doc, parse_success = parse_json(json_string);
+        if !parse_success {
+            print("failed to parse json\n");
+            return 0;
+        }
+    }
+
+    pairs_node := find_node_by_name(json_doc.root, "pairs");
+    if pairs_node {
+        it := pairs_node.next_child;
+        while it != null {
+            assert(it.type == .OBJECT);
+
+            get_member :: (object_node: *Json_Node, member_name: string) -> float64 {
+                result: float64 = 0;
+
+                node := find_node_by_name(object_node, member_name);
+                if node {
+                    float_value, success := string_to_float64(node.value_string);
+                    if !success {
+                        print("Error parsing float from string '%'.\n", node.value_string);
+                        result = 0.0;
+                    }
+                }
+                return float_value;
+            }
+
+            pair := pairs + pair_count;
+            pair_count += 1;
+            pair.* = .{
+                x0 = get_member(it, "x0"),
+                y0 = get_member(it, "y0"),
+                x1 = get_member(it, "x1"),
+                y1 = get_member(it, "y1"),
+            };
+
+            it = it.next_sibling;
+        }
+    }
+
+    return pair_count;
+}
