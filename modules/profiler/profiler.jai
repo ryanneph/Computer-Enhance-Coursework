@@ -155,9 +155,8 @@ profiler_end_and_summarize :: () {
         FMT(timer_freq / 1_000_000_000.0, 2));
 
     #if !DISABLED {
-
         unmeasured := total_elapsed;
-        if profile_entry_count > 0  for index : 1..profile_entry_count-1 {
+        if profile_entry_count > 0  for index : 1..profile_entry_count {
             entry := *entries[index];
             if entry.tsc_elapsed_inclusive == 0  continue;
 
