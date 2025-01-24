@@ -1,3 +1,6 @@
+#import "Basic";
+#import "File";
+
 #if OS == .LINUX {
     #scope_file;
     #import "POSIX";
@@ -22,5 +25,29 @@
         read_count := read(STDIN_FILENO, input_return_buf.data, input_return_buf.count);
         view := string.{read_count, input_return_buf.data};
         return view;
+    }
+
+    read_full_file :: (filename: string) -> (data: string, success: bool) {
+        success: bool;
+        contents: string;
+
+        file:, success = file_open(filename);
+        if !success {
+            return .{}, false;
+        }
+
+        contents.count, success = file_length(file);
+        if !success || !contents.count {
+            return .{}, false;
+        }
+
+        contents.data = alloc(contents.count);
+        success=, read_count: = file_read(file, contents.data, contents.count);
+        if !success || read_count != contents.count {
+            free(contents.data);
+            return .{}, false;
+        }
+
+        return contents, success;
     }
 }

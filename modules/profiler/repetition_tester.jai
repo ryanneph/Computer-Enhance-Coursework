@@ -126,6 +126,9 @@ repetition_test_set_max_iters :: (using test: *Repetition_Test, new_max: u64) {
 }
 
 repetition_test_report :: (using test: *Repetition_Test) {
+    print("iteration % / % (or % / % without improvement)\n",
+        iters, max_iters, consecutive_without_improvement,
+        improve_threshold);
     print_record(*min_record, "Min");
     print_record(*max_record, "Max");
     print_record(*avg_record, "Avg");
@@ -180,8 +183,9 @@ pre_print :: (using test: *Repetition_Test) {
 }
 
 during_print :: (using test: *Repetition_Test) {
-    clear_previous_lines(3);
     update_avg_record(test);
+
+    clear_previous_lines(4);
     repetition_test_report(test);
 }
 

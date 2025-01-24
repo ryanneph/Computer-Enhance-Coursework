@@ -10,6 +10,7 @@ REPORT_MEMORY_LEAKS :: false;
 #import "Random";
 
 #import "profiler"()(DISABLED=!USE_PROFILER);
+#import "platform";
 
 #load "types.jai";
 
@@ -171,33 +172,6 @@ compute_from_binary :: (input_filename: string) {
             // print("% (actual: %, error=%0%%)\n", dist, dists[it_index], error * 100.0);
         }
     }
-}
-
-read_full_file :: (filename: string) -> (data: string, success: bool) {
-    success: bool;
-
-    file:, success = file_open(filename);
-    if !success
-        return "", false;
-
-    contents: string;
-
-    contents.count, success = file_length(file);
-    if !success || !contents.count
-        return "", false;
-
-    contents.data = alloc(contents.count);
-
-    {
-        profile_block_bandwidth("file_read", cast(u64)contents.count);
-        success, read_count: = file_read(file, contents.data, contents.count);
-        if !success || read_count != contents.count {
-            free(contents.data);
-            return "", false;
-        }
-    }
-
-    return contents, success;
 }
 
 parse_haversine_pairs :: (input_json: string, max_pair_count: u64, pairs: *Point_Pair) -> u64 {
