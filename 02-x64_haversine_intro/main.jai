@@ -91,13 +91,13 @@ generate :: (pair_count: u64) {
     // json encoding
     json_string := format_as_json(pairs, temporary_allocator);
 
-    json_output_file := "haversine_input.json";
+    json_output_file := tprint("haversine_input_%.json", pairs.count);
     write_entire_file(json_output_file, json_string);
     print("Generated % pairs and saved to file '%'\n", pairs.count, json_output_file);
 
     // binary encoding
     {
-        output_file := "haversine_reference.bin";
+        output_file := tprint("haversine_answer_%.bin", pairs.count);
         file, success := file_open(output_file, for_writing=true);
         assert(success);
 
@@ -113,10 +113,14 @@ generate :: (pair_count: u64) {
             WRITE(pair);
         }
 
+        coefficient := 1 / cast(float64, pairs.count);
+        sum: float64;
         for pair: pairs {
             distance: float64 = dists[it_index];
+            sum += coefficient * distance;
             WRITE(distance);
         }
+        WRITE(sum);
 
         file_close(*file);
         print("Generated % pairs and saved to file '%'\n", pairs.count, output_file);
