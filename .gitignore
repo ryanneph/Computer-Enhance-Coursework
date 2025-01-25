@@ -5,3 +5,6 @@ main
 8086_perf_estimate.asm
 test_temp/
 .build/
+04-x64_haversine_optimized/data/*
+!04-x64_haversine_optimized/data/haversine_answer_100.bin
+!04-x64_haversine_optimized/data/haversine_input_100.json

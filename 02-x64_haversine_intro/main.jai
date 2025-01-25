@@ -169,7 +169,7 @@ compute_from_binary :: (input_filename: string) {
     print("Found % pairs in binary file '%'\n", pairs.count, input_filename);
 
     {
-        profile_block("compute");
+        profile_block("compute binary");
         for pairs {
             dist := reference_haversine(it);
             error := (dist - dists[it_index]) / dists[it_index];
@@ -207,7 +207,7 @@ compute_from_json :: (input_filename: string) {
     pair_count := parse_haversine_pairs(json_string, max_pair_count, pairs);
     sum: float64;
     {
-        profile_block_bandwidth("compute", pair_count * size_of(Point_Pair));
+        profile_block_bandwidth("compute json", pair_count * size_of(Point_Pair));
         for 1..cast(s64, pair_count)-1 {
             haversine_distance := reference_haversine(pairs[it]);
             sum += haversine_distance;
