@@ -4,7 +4,7 @@
 
 compile_cpp_lib :: () {
     args := string.[
-        "clang++", "-fPIC", "--shared", "-O2",
+        "clang++", "-fPIC", "--shared", "-O2", "-g",
         "-o", "libhaversinecpp.so",
         "reference_haversine.cpp",
     ];
