@@ -1,7 +1,7 @@
 // GOLDEN TEST DATA
 
 // domain: [-pi, pi]
-sin_tests :: Test_Case.[
+sin_golden_tests :: Test_Case.[
     .{-3.14159265358979E+00, -1.22464679914735E-16},
     .{-3.04341788316511E+00, -9.80171403295608E-02},
     .{-2.94524311274043E+00, -1.95090322016129E-01},
@@ -70,7 +70,7 @@ sin_tests :: Test_Case.[
 ];
 
 // domain: [-pi/2, pi/2]
-cos_tests :: Test_Case.[
+cos_golden_tests :: Test_Case.[
     .{-1.5707963267949E+00, 6.12323399573677E-17},
     .{-1.47262155637022E+00, 9.80171403295608E-02},
     .{-1.37444678594553E+00, 1.95090322016128E-01},
@@ -107,7 +107,7 @@ cos_tests :: Test_Case.[
 ];
 
 // domain: [0, 1]
-sqrt_tests :: Test_Case.[
+sqrt_golden_tests :: Test_Case.[
     .{0.0E+00, 0.0E+00},
     .{3.125E-02, 1.76776695296637E-01},
     .{6.25E-02, 2.5E-01},
@@ -144,7 +144,7 @@ sqrt_tests :: Test_Case.[
 ];
 
 // domain: [0, 1]
-asin_tests :: Test_Case.[
+asin_golden_tests :: Test_Case.[
     .{0.0E+00, 0.0E+00},
     .{3.125E-02, 3.12550884994952E-02},
     .{6.25E-02, 6.25407617964914E-02},
