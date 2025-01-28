@@ -99,6 +99,18 @@ approx_sqrt_stub :: (x: float64) -> float64 {
     return result;
 }
 
+libintrinsicscpp :: #library,no_dll "libintrinsicscpp";
+sqrt_intrinsic :: (x: float64) -> float64 {
+    sqrt_intrinsic_cpp :: (x: float64) -> float64 #foreign libintrinsicscpp;
+    result := sqrt_intrinsic_cpp(x);
+    return result;
+}
+sqrt_intrinsic_reciprocal :: (x: float64) -> float64 {
+    sqrt_intrinsic_reciprocal_cpp :: (x: float64) -> float64 #foreign libintrinsicscpp;
+    result := sqrt_intrinsic_reciprocal_cpp(x);
+    return result;
+}
+
 print_header :: (builder: *String_Builder, format: string, args: ..Any) {
     print_to_builder(builder, "\n");
 
@@ -133,6 +145,9 @@ main :: () {
         .{ "cos_stub", run_approx_test(approx_cos_stub, cos, .{-PI/2, PI/2, 64}, absolute_error_threshold)},
         .{ "asin_stub", run_approx_test(approx_asin_stub, asin, .{0.0, 1.0, 64}, absolute_error_threshold)},
         .{ "sqrt_stub", run_approx_test(approx_sqrt_stub, sqrt, .{0.0, 1.0, 64}, absolute_error_threshold)},
+
+        .{ "sqrt_intrinsic",            run_approx_test(sqrt_intrinsic,            sqrt, .{0.0, 1.0, 64}, absolute_error_threshold)},
+        .{ "sqrt_intrinsic_reciprocal", run_approx_test(sqrt_intrinsic_reciprocal, sqrt, .{0.0, 1.0, 64}, absolute_error_threshold)},
     ];
 
     //
