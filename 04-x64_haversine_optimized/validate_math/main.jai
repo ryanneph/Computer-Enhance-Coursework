@@ -68,7 +68,7 @@ run_approx_test :: ($compute_proc: compute_proc_type, golden_proc: compute_proc_
         }
 
         result = .{
-            domain.count,
+            domain.count+1,
             error_count,
             max_absolute_error,
         };
