@@ -2,6 +2,7 @@
 #import "Math";
 
 #load "golden_data.jai";
+absolute_error_threshold: float64 : 1.0E-12;
 
 Test_Case :: struct {
     input: float64;
@@ -12,10 +13,11 @@ Test_Result :: struct {
     test_count: u64;
     error_count: u64;
     max_absolute_error: float64;
+    sampling: Sampling;
 }
 
 compute_proc_type :: #type (float64) -> float64;
-run_golden_test :: ($compute_proc: compute_proc_type, test_cases: []Test_Case, absolute_error_threshold: float64) -> Test_Result {
+run_golden_test :: ($compute_proc: compute_proc_type, test_cases: []Test_Case) -> Test_Result {
     error_count: u64;
     max_absolute_error := FLOAT64_MIN;
 
@@ -32,7 +34,8 @@ run_golden_test :: ($compute_proc: compute_proc_type, test_cases: []Test_Case, a
     result := Test_Result.{
         xx test_cases.count,
         error_count,
-        max_absolute_error
+        max_absolute_error,
+        .{},
     };
     return result;
 }
@@ -43,7 +46,7 @@ Sampling :: struct {
     count: u64;
 }
 
-run_approx_test :: ($compute_proc: compute_proc_type, golden_proc: compute_proc_type, domain: Sampling, absolute_error_threshold: float64)
+run_approx_test :: ($compute_proc: compute_proc_type, golden_proc: compute_proc_type, domain: Sampling)
     -> Test_Result
 {
     using domain;
@@ -71,6 +74,7 @@ run_approx_test :: ($compute_proc: compute_proc_type, golden_proc: compute_proc_
             domain.count+1,
             error_count,
             max_absolute_error,
+            domain,
         };
     } else {
         print("ERROR: Invalid Sampling. Must have first < last and non-zero count: first=% last=% count=%\n", first, last, count);
@@ -101,13 +105,51 @@ approx_sqrt_stub :: (x: float64) -> float64 {
 
 libintrinsicscpp :: #library,no_dll "libintrinsicscpp";
 sqrt_intrinsic :: (x: float64) -> float64 {
-    sqrt_intrinsic_cpp :: (x: float64) -> float64 #foreign libintrinsicscpp;
-    result := sqrt_intrinsic_cpp(x);
+    proc :: (x: float64) -> float64 #foreign libintrinsicscpp "sqrt_intrinsic_cpp";
+    result := proc(x);
+    return result;
+}
+sqrt_intrinsic_f32_precision :: (x: float64) -> float64 {
+    proc :: (x: float64) -> float64 #foreign libintrinsicscpp "sqrt_intrinsic_f32_precision_cpp";
+    result := proc(x);
     return result;
 }
 sqrt_intrinsic_reciprocal :: (x: float64) -> float64 {
-    sqrt_intrinsic_reciprocal_cpp :: (x: float64) -> float64 #foreign libintrinsicscpp;
-    result := sqrt_intrinsic_reciprocal_cpp(x);
+    // wacky ultra-low-precision alternative method for computing sqrt()
+    proc :: (x: float64) -> float64 #foreign libintrinsicscpp "sqrt_intrinsic_reciprocal_cpp";
+    result := proc(x);
+    return result;
+}
+sin_quadratic :: (input: float64) -> float64 {
+    A: float64 : -4.0 / (PI64 * PI64);
+    B: float64 : 4.0 / PI64;
+
+    x := input;
+    sign: float64 = 1.0;
+    if x < 0 {
+        x = -x;
+        sign = -1.0;
+    }
+
+    result := sign * (A*x*x + B*x);
+    return result;
+}
+sin_quadratic_intrinsic :: (input: float64) -> float64 {
+    sin_quad_zero_to_pi :: (x: float64) -> float64 #foreign libintrinsicscpp;
+
+    x := input;
+    sign: float64 = 1.0;
+    if x < 0 {
+        x = -x;
+        sign = -1.0;
+    }
+
+    result := sign * sin_quad_zero_to_pi(x);
+    return result;
+}
+cos_quadratic_intrinsic :: (input: float64) -> float64 {
+    x := input + (PI64 / 2.0);
+    result := sin_quadratic_intrinsic(x);
     return result;
 }
 
@@ -125,29 +167,32 @@ print_header :: (builder: *String_Builder, format: string, args: ..Any) {
 }
 
 main :: () {
-    absolute_error_threshold: float64 = 1.0E-12;
-
     //
     // Golden Tests
     //
     golden_results := struct { name: string; result: Test_Result; }.[
-        .{"sin",  run_golden_test(sin,  sin_golden_tests,  absolute_error_threshold)},
-        .{"cos",  run_golden_test(cos,  cos_golden_tests,  absolute_error_threshold)},
-        .{"asin", run_golden_test(asin, asin_golden_tests, absolute_error_threshold)},
-        .{"sqrt", run_golden_test(sqrt, sqrt_golden_tests, absolute_error_threshold)},
+        .{"sin",  run_golden_test(sin,  sin_golden_tests)},
+        .{"cos",  run_golden_test(cos,  cos_golden_tests)},
+        .{"asin", run_golden_test(asin, asin_golden_tests)},
+        .{"sqrt", run_golden_test(sqrt, sqrt_golden_tests)},
     ];
 
     //
     // Approximation Tests
     //
     approx_results := struct { name: string; result: Test_Result; }.[
-        .{ "sin_stub", run_approx_test(approx_sin_stub, sin, .{-PI, PI, 64}, absolute_error_threshold)},
-        .{ "cos_stub", run_approx_test(approx_cos_stub, cos, .{-PI/2, PI/2, 64}, absolute_error_threshold)},
-        .{ "asin_stub", run_approx_test(approx_asin_stub, asin, .{0.0, 1.0, 64}, absolute_error_threshold)},
-        .{ "sqrt_stub", run_approx_test(approx_sqrt_stub, sqrt, .{0.0, 1.0, 64}, absolute_error_threshold)},
+        .{"sin_stub", run_approx_test(approx_sin_stub, sin, .{-PI, PI, 64})},
+        .{"cos_stub", run_approx_test(approx_cos_stub, cos, .{-PI/2, PI/2, 64})},
+        .{"asin_stub", run_approx_test(approx_asin_stub, asin, .{0.0, 1.0, 64})},
+        .{"sqrt_stub", run_approx_test(approx_sqrt_stub, sqrt, .{0.0, 1.0, 64})},
 
-        .{ "sqrt_intrinsic",            run_approx_test(sqrt_intrinsic,            sqrt, .{0.0, 1.0, 64}, absolute_error_threshold)},
-        .{ "sqrt_intrinsic_reciprocal", run_approx_test(sqrt_intrinsic_reciprocal, sqrt, .{0.0, 1.0, 64}, absolute_error_threshold)},
+        .{"sqrt_intrinsic",               run_approx_test(sqrt_intrinsic,               sqrt, .{0.0, 1.0, 64})},
+        .{"sqrt_intrinsic_f32_precision", run_approx_test(sqrt_intrinsic_f32_precision, sqrt, .{0.0, 1.0, 64})},
+        .{"sqrt_intrinsic_reciprocal",    run_approx_test(sqrt_intrinsic_reciprocal,    sqrt, .{0.0, 1.0, 64})},
+
+        .{"sin_quadratic", run_approx_test(sin_quadratic, sin, .{-PI, PI, 64})},
+        .{"sin_quadratic_intrinsic", run_approx_test(sin_quadratic_intrinsic, sin, .{-PI, PI, 64})},
+        .{"cos_quadratic_intrinsic", run_approx_test(cos_quadratic_intrinsic, cos, .{-PI/2, PI/2, 64})},
     ];
 
     //
@@ -175,8 +220,12 @@ main :: () {
     for approx_results {
         using it;
         using it.result;
-        print_to_builder(*builder, "- %: #errors=%/% max_absolute_error=%\n",
-            name, error_count, test_count, max_absolute_error);
+        if test_count > 0 {
+            print_to_builder(*builder, "- % RANGE=[%, %]: #errors=%/% max_absolute_error=%\n",
+                name, sampling.first, sampling.last, error_count, test_count, max_absolute_error);
+        } else {
+            print_to_builder(*builder, "- %: no tests cases\n", name);
+        }
     }
 
     write_builder(*builder);
