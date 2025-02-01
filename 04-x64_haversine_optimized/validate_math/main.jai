@@ -83,44 +83,8 @@ run_approx_test :: ($compute_proc: compute_proc_type, golden_proc: compute_proc_
     return result;
 }
 
-approx_sin_stub :: (x: float64) -> float64 {
-    result := x;
-    return result;
-}
-
-approx_cos_stub :: (x: float64) -> float64 {
-    result := x;
-    return result;
-}
-
-approx_asin_stub :: (x: float64) -> float64 {
-    result := x;
-    return result;
-}
-
-approx_sqrt_stub :: (x: float64) -> float64 {
-    result := x;
-    return result;
-}
-
 libintrinsicscpp :: #library,no_dll "libintrinsicscpp";
-sqrt_intrinsic :: (x: float64) -> float64 {
-    proc :: (x: float64) -> float64 #foreign libintrinsicscpp "sqrt_intrinsic_cpp";
-    result := proc(x);
-    return result;
-}
-sqrt_intrinsic_f32_precision :: (x: float64) -> float64 {
-    proc :: (x: float64) -> float64 #foreign libintrinsicscpp "sqrt_intrinsic_f32_precision_cpp";
-    result := proc(x);
-    return result;
-}
-sqrt_intrinsic_reciprocal :: (x: float64) -> float64 {
-    // wacky ultra-low-precision alternative method for computing sqrt()
-    proc :: (x: float64) -> float64 #foreign libintrinsicscpp "sqrt_intrinsic_reciprocal_cpp";
-    result := proc(x);
-    return result;
-}
-sin_quadratic :: (input: float64) -> float64 {
+sinq :: (input: float64) -> float64 {
     A: float64 : -4.0 / (PI64 * PI64);
     B: float64 : 4.0 / PI64;
 
@@ -134,24 +98,25 @@ sin_quadratic :: (input: float64) -> float64 {
     result := sign * (A*x*x + B*x);
     return result;
 }
-sin_quadratic_intrinsic :: (input: float64) -> float64 {
-    sin_quad_zero_to_pi :: (x: float64) -> float64 #foreign libintrinsicscpp;
 
-    x := input;
-    sign: float64 = 1.0;
-    if x < 0 {
-        x = -x;
-        sign = -1.0;
-    }
-
-    result := sign * sin_quad_zero_to_pi(x);
-    return result;
+bind_to_cpp :: (name: string) -> string #compile_time {
+    format := #string END
+        %1 :: (input: float64) -> float64 {
+            proc :: (x: float64) -> float64 #foreign libintrinsicscpp "%1_cpp";
+            result := proc(input);
+            return result;
+        }
+    END
+    return tprint(format, name);
 }
-cos_quadratic_intrinsic :: (input: float64) -> float64 {
-    x := input + (PI64 / 2.0);
-    result := sin_quadratic_intrinsic(x);
-    return result;
-}
+#insert #run bind_to_cpp("sqrt_intrin");
+#insert #run bind_to_cpp("sqrt_intrin_f32");
+#insert #run bind_to_cpp("sqrt_intrin_rcp");
+#insert #run bind_to_cpp("sinq_intrin");
+#insert #run bind_to_cpp("cosq_intrin");
+#insert #run bind_to_cpp("asin_intrin1");
+#insert #run bind_to_cpp("asin_intrin2");
+#insert #run bind_to_cpp("asin_intrin3");
 
 print_header :: (builder: *String_Builder, format: string, args: ..Any) {
     print_to_builder(builder, "\n");
@@ -180,19 +145,19 @@ main :: () {
     //
     // Approximation Tests
     //
+    sample_count :: 1024;
     approx_results := struct { name: string; result: Test_Result; }.[
-        .{"sin_stub", run_approx_test(approx_sin_stub, sin, .{-PI, PI, 64})},
-        .{"cos_stub", run_approx_test(approx_cos_stub, cos, .{-PI/2, PI/2, 64})},
-        .{"asin_stub", run_approx_test(approx_asin_stub, asin, .{0.0, 1.0, 64})},
-        .{"sqrt_stub", run_approx_test(approx_sqrt_stub, sqrt, .{0.0, 1.0, 64})},
+        .{"sinq",        run_approx_test(sinq, sin, .{-PI, PI, sample_count})},
+        .{"sinq_intrin", run_approx_test(sinq_intrin, sin, .{-PI, PI, sample_count})},
+        .{"cosq_intrin", run_approx_test(cosq_intrin, cos, .{-PI/2, PI/2, sample_count})},
 
-        .{"sqrt_intrinsic",               run_approx_test(sqrt_intrinsic,               sqrt, .{0.0, 1.0, 64})},
-        .{"sqrt_intrinsic_f32_precision", run_approx_test(sqrt_intrinsic_f32_precision, sqrt, .{0.0, 1.0, 64})},
-        .{"sqrt_intrinsic_reciprocal",    run_approx_test(sqrt_intrinsic_reciprocal,    sqrt, .{0.0, 1.0, 64})},
+        .{"asin_intrin1", run_approx_test(asin_intrin1, asin, .{0.0, 1.0, sample_count})},
+        .{"asin_intrin2", run_approx_test(asin_intrin2, asin, .{0.0, 1.0, sample_count})},
+        .{"asin_intrin3", run_approx_test(asin_intrin3, asin, .{0.0, 1.0, sample_count})},
 
-        .{"sin_quadratic", run_approx_test(sin_quadratic, sin, .{-PI, PI, 64})},
-        .{"sin_quadratic_intrinsic", run_approx_test(sin_quadratic_intrinsic, sin, .{-PI, PI, 64})},
-        .{"cos_quadratic_intrinsic", run_approx_test(cos_quadratic_intrinsic, cos, .{-PI/2, PI/2, 64})},
+        .{"sqrt_intrin",     run_approx_test(sqrt_intrin,     sqrt, .{0.0, 1.0, sample_count})},
+        .{"sqrt_intrin_f32", run_approx_test(sqrt_intrin_f32, sqrt, .{0.0, 1.0, sample_count})},
+        .{"sqrt_intrin_rcp", run_approx_test(sqrt_intrin_rcp, sqrt, .{0.0, 1.0, sample_count})},
     ];
 
     //
