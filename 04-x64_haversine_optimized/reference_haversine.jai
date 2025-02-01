@@ -5,6 +5,7 @@
 // FOREIGN FUNCTIONS
 libhaversinecpp :: #library "libhaversinecpp";
 reference_haversine_cpp :: (pair: Point_Pair, earth_radius: float64 = EARTH_RADIUS) -> float64 #foreign libhaversinecpp;
+reference_haversine_approx_cpp :: (pair: Point_Pair, earth_radius: float64 = EARTH_RADIUS) -> float64 #foreign libhaversinecpp;
 
 Haversine_Data :: struct {
     json_string: string;
@@ -48,19 +49,26 @@ reference_haversine :: (pair: Point_Pair, earth_radius: float64 = EARTH_RADIUS) 
     return result;
 }
 
-reference_haversine_compute :: #bake_arguments haversine_compute(use_cpp=false);
-reference_haversine_cpp_compute :: #bake_arguments haversine_compute(use_cpp=true);
-haversine_compute :: (haversine: Haversine_Data, $use_cpp: bool = false) -> float64 {
+Haversine_Type :: enum {
+    JAI;
+    CPP;
+    CPP_APPROX;
+}
+
+reference_haversine_compute :: #bake_arguments haversine_compute(type=.JAI);
+reference_haversine_cpp_compute :: #bake_arguments haversine_compute(type=.CPP);
+reference_haversine_approx_cpp_compute :: #bake_arguments haversine_compute(type=.CPP_APPROX);
+haversine_compute :: (haversine: Haversine_Data, $type: Haversine_Type) -> float64 {
     sum: float64;
 
     coefficient := 1.0 / cast(float64, haversine.pair_count);
     for 0..haversine.pair_count-1 {
         pair := haversine.pairs[it];
         computed: float64;
-        #if use_cpp {
-            computed = reference_haversine_cpp(pair, EARTH_RADIUS);
-        } else {
-            computed = reference_haversine(pair, EARTH_RADIUS);
+        #if #complete type == {
+            case .JAI; computed = reference_haversine(pair, EARTH_RADIUS);
+            case .CPP; computed = reference_haversine_cpp(pair, EARTH_RADIUS);
+            case .CPP_APPROX; computed = reference_haversine_approx_cpp(pair, EARTH_RADIUS);
         }
         sum += coefficient * computed;
     }
@@ -68,19 +76,20 @@ haversine_compute :: (haversine: Haversine_Data, $use_cpp: bool = false) -> floa
     return sum;
 }
 
-reference_haversine_validate :: #bake_arguments haversine_validate(use_cpp=false);
-reference_haversine_cpp_validate :: #bake_arguments haversine_validate(use_cpp=true);
-haversine_validate :: (haversine: Haversine_Data, $use_cpp: bool = false) -> u64 {
+reference_haversine_validate :: #bake_arguments haversine_validate(type=.JAI);
+reference_haversine_cpp_validate :: #bake_arguments haversine_validate(type=.CPP);
+reference_haversine_approx_cpp_validate :: #bake_arguments haversine_validate(type=.CPP_APPROX);
+haversine_validate :: (haversine: Haversine_Data, $type: Haversine_Type) -> u64 {
     error_count: u64;
 
     for 0..haversine.pair_count-1 {
         pair := haversine.pairs[it];
         answer := haversine.answers[it];
         computed: float64;
-        #if use_cpp {
-            computed = reference_haversine_cpp(pair, EARTH_RADIUS);
-        } else {
-            computed = reference_haversine(pair, EARTH_RADIUS);
+        #if #complete type == {
+            case .JAI; computed = reference_haversine(pair, EARTH_RADIUS);
+            case .CPP; computed = reference_haversine_cpp(pair, EARTH_RADIUS);
+            case .CPP_APPROX; computed = reference_haversine_approx_cpp(pair, EARTH_RADIUS);
         }
         if !approx_equal(computed, answer) {
             error_count += 1;

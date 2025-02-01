@@ -18,8 +18,9 @@ Test :: struct {
 }
 
 tests :: Test.[
-    .{"ReferenceHaversine",    reference_haversine_compute,     reference_haversine_validate},
-    .{"ReferenceHaversineCpp", reference_haversine_cpp_compute, reference_haversine_cpp_validate},
+    .{"ReferenceHaversine",          reference_haversine_compute,     reference_haversine_validate},
+    .{"ReferenceHaversineCpp",       reference_haversine_cpp_compute, reference_haversine_cpp_validate},
+    .{"ReferenceHaversineApproxCpp", reference_haversine_approx_cpp_compute, reference_haversine_approx_cpp_validate},
 ];
 
 Result :: struct {
