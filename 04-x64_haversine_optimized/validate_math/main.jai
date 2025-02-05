@@ -147,9 +147,9 @@ main :: () {
     //
     sample_count :: 1024;
     approx_results := struct { name: string; result: Test_Result; }.[
-        .{"sinq",        run_approx_test(sinq, sin, .{-PI, PI, sample_count})},
-        .{"sinq_intrin", run_approx_test(sinq_intrin, sin, .{-PI, PI, sample_count})},
-        .{"cosq_intrin", run_approx_test(cosq_intrin, cos, .{-PI/2, PI/2, sample_count})},
+        .{"sinq_halfdomain", run_approx_test(sinq, sin, .{-PI, PI, sample_count})},
+        .{"sinq_quartdomain_intrin", run_approx_test(sinq_intrin, sin, .{-PI, PI, sample_count})},
+        .{"cosq_quartdomain_intrin", run_approx_test(cosq_intrin, cos, .{-PI/2, PI/2, sample_count})},
 
         .{"asin_intrin1", run_approx_test(asin_intrin1, asin, .{0.0, 1.0, sample_count})},
         .{"asin_intrin2", run_approx_test(asin_intrin2, asin, .{0.0, 1.0, sample_count})},

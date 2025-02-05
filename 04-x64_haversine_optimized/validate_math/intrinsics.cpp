@@ -25,9 +25,9 @@ double sqrt_intrin_rcp_cpp(double x) {
 }
 
 #define PI 3.141592653589793
-double sinq_zero_to_pi_cpp(double input) {
-   __m128d A = _mm_set_sd(-4.0 / (PI * PI));
-   __m128d B = _mm_set_sd(4.0 / PI);
+double sinq_zero_to_halfpi_cpp(double input) {
+   __m128d A = _mm_set_sd(-0.3357488673628103541807525733876701910953780492546723687387637750157263772845455);
+   __m128d B = _mm_set_sd(1.164012859946630796034863328523423717191309716948615456152205566227330270901187);
    __m128d x = _mm_set_sd(input);
    __m128d xsq = _mm_mul_sd(x, x);
 
@@ -39,14 +39,15 @@ double sinq_zero_to_pi_cpp(double input) {
    return result;
 }
 
+static double absf64(double x) {
+   return x >= 0 ? x : -x;
+}
 double sinq_intrin_cpp(double x) {
-   double sign = 1.0;
-   if (x < 0) {
-      x = -x;
-      sign = -1.0;
-   }
-
-   double result = sign * sinq_zero_to_pi_cpp(x);
+   double halfpi = PI/2;
+   double posx = absf64(x);
+   double quartx = (posx > halfpi) ? (PI - posx) : posx;
+   double result = sinq_zero_to_halfpi_cpp(quartx);
+   result = (x < 0) ? -result : result;
    return result;
 }
 
