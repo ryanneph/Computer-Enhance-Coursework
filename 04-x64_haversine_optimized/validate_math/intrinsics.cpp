@@ -67,25 +67,29 @@ double asin_intrin1_cpp(double input) {
    return result;
 }
 
-double asin_intrin2_cpp(double input) {
-   // ops: 6 (4 cheap, 2 expensive)
-   //   mul:  2
-   //   add:  2
-   //   div:  1
-   //   sqrt: 1
-   double x = input;
-   double result = (2/x) * (1 - sqrt_intrin_cpp(1 - x*x));
+double asin_intrin2_cpp(double x) {
+   double result = 0;
+   if (x != 0) {
+      // ops: 6 (4 cheap, 2 expensive)
+      //   mul:  2
+      //   add:  2
+      //   div:  1
+      //   sqrt: 1
+      result = (2/x) * (1 - sqrt_intrin_cpp(1 - x*x));
+   }
    return result;
 }
 
-double asin_intrin3_cpp(double input) {
-   // ops: 9 (7 cheap, 2 expensive)
-   //   mul:  4
-   //   add:  3
-   //   div:  1
-   //   sqrt: 1
-   double x = input;
-   double result = (PI/2.0) * (0.136*x + (1/x)*(1-sqrt_intrin_cpp(1-x*x)));
+double asin_intrin3_cpp(double x) {
+   double result = 0;
+   if (x != 0) {
+      // ops: 9 (7 cheap, 2 expensive)
+      //   mul:  4
+      //   add:  3
+      //   div:  1
+      //   sqrt: 1
+      result = (PI/2.0) * (0.136*x + (1/x)*(1-sqrt_intrin_cpp(1-x*x)));
+   }
    return result;
 }
 
