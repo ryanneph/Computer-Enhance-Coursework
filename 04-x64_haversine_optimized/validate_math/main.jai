@@ -139,7 +139,7 @@ average_diff :: (using test_result: Math_Tester_Result) -> float64 {
     result := ifx diff_count > 0 then total_diff / cast(float64, diff_count) else 0;
     return result;
 }
-math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 1_0) -> bool {
+math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 1_000_000) -> bool {
     if running {
         sample_index += 1;
     } else {
@@ -261,7 +261,7 @@ main :: () {
         actual := sin(input);
         result: float64;
 
-        for n: 1..cast(u64, 10) {
+        for n: 1..cast(u64, 20) {
             result = sint(input, n);
             test_result(*tester, actual, result, "sin_taylor%", n);
         }
