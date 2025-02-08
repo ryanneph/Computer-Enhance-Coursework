@@ -46,43 +46,6 @@ Sampling :: struct {
     count: u64;
 }
 
-run_approx_test :: ($compute_proc: compute_proc_type, golden_proc: compute_proc_type, domain: Sampling)
-    -> Test_Result
-{
-    using domain;
-    result: Test_Result;
-
-    if first < last && count > 0 {
-        error_count: u64;
-        max_absolute_error := FLOAT64_MIN;
-
-        step_size := (last - first) / count;
-        input := first;
-        for 1..count+1 { // include last sample
-            computed := compute_proc(input);
-            expected := golden_proc(input);
-            absolute_error := abs(computed - expected);
-            if absolute_error >= absolute_error_threshold {
-                error_count += 1;
-            }
-            max_absolute_error = max(max_absolute_error, absolute_error);
-
-            input += step_size;
-        }
-
-        result = .{
-            domain.count+1,
-            error_count,
-            max_absolute_error,
-            domain,
-        };
-    } else {
-        print("ERROR: Invalid Sampling. Must have first < last and non-zero count: first=% last=% count=%\n", first, last, count);
-    }
-
-    return result;
-}
-
 libintrinsicscpp :: #library,no_dll "libintrinsicscpp";
 sinq :: (input: float64) -> float64 {
     A: float64 : -4.0 / (PI64 * PI64);
@@ -96,6 +59,25 @@ sinq :: (input: float64) -> float64 {
     }
 
     result := sign * (A*x*x + B*x);
+    return result;
+}
+
+sint :: (input: float64, $$order: u64 = 5) -> float64 {
+    result := input;
+
+    input_product := input;
+    coefficient: float64 = 1;
+    sign: float64 = -1.0;
+    i: u64 = 3;
+    while i <= order {
+        coefficient /= (i * (i-1));
+        input_product *= input*input;
+        result += sign * coefficient * input_product;
+
+        sign *= -1;
+        i += 2;
+    }
+
     return result;
 }
 
@@ -117,6 +99,122 @@ bind_to_cpp :: (name: string) -> string #compile_time {
 #insert #run bind_to_cpp("asin_intrin1");
 #insert #run bind_to_cpp("asin_intrin2");
 #insert #run bind_to_cpp("asin_intrin3");
+
+
+Math_Tester_Result :: struct {
+    label: string;
+    label_storage: [64]u8;
+
+    total_diff: float64;
+    diff_count: u64;
+
+    max_absolute_error: float64;
+    input_at_max_error: float64;
+    reference_at_max_error: float64;
+    computed_at_max_error: float64;
+    diff_at_max_error: float64;
+}
+Math_Tester :: struct {
+    step_size: float64;
+    sample_index: u64;
+    running: bool;
+
+    input_value: float64; // NOTE(ryan): is set within each call to math_test();
+
+    results: []Math_Tester_Result;
+    error_result: Math_Tester_Result;
+    results_storage: [256]Math_Tester_Result;
+    result_offset: u64;
+    reported_result_count: u64;
+}
+set_label :: (using test_result: *Math_Tester_Result, format: string, args: ..Any) {
+    max_len := size_of(type_of(label_storage));
+    label.data = label_storage.data;
+
+    temp := tprint(format, ..args);
+    label.count = min(temp.count, max_len);
+    memcpy(label.data, temp.data, label.count);
+}
+average_diff :: (using test_result: Math_Tester_Result) -> float64 {
+    result := ifx diff_count > 0 then total_diff / cast(float64, diff_count) else 0;
+    return result;
+}
+math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 1_0) -> bool {
+    if running {
+        sample_index += 1;
+    } else {
+        results.data = results_storage.data;
+
+        sample_index = 0;
+        running = true;
+    }
+
+    if sample_index < sample_count {
+        result_offset = 0;
+
+        t := sample_index / cast(float64, sample_count-1);
+        input_value = (1.0 - t)*sample_first + t*sample_last;
+    } else {
+        running = false;
+
+        results.count += xx result_offset;
+        if results.count > results_storage.count {
+            results.count = results_storage.count;
+            print("ERROR: out of room to store test results.\n");
+        }
+
+        print("\n");
+        print("max abs error               (avg error                  )    input value\n");
+        print("--------------------------- ----------------------------- -- ---------------------------\n");
+        while reported_result_count < xx results.count {
+            using test_result := *results[reported_result_count];
+
+            format_context := context;
+            push_context format_context {
+                format_float := *format_context.print_style.default_format_float;
+                format_float.zero_removal = .NO;
+                format_float.positive_number_prefix = .PLUS;
+                format_float.trailing_width = 24;
+                format_float.mode = .DECIMAL;
+
+                print("% (%) at % [%]\n", diff_at_max_error, average_diff(test_result), input_at_max_error, label);
+            }
+
+            reported_result_count += 1;
+        }
+    }
+
+    return running;
+}
+test_result :: (using tester: *Math_Tester, actual: float64, result: float64, label: string, args: ..Any) {
+    test_result := *error_result;
+    result_index := cast(u64, results.count) + result_offset;
+    if result_index < results_storage.count {
+        test_result = *results[result_index];
+    }
+
+    if sample_index == 0 {
+        set_label(test_result, label, ..args);
+    }
+
+    diff := actual - result;
+    test_result.total_diff += diff;
+    test_result.diff_count += 1;
+
+    absolute_error := abs(diff);
+    if absolute_error > test_result.max_absolute_error {
+        test_result.max_absolute_error = absolute_error;
+        test_result.input_at_max_error = input_value;
+        test_result.reference_at_max_error = actual;
+        test_result.computed_at_max_error = result;
+        test_result.diff_at_max_error = diff;
+    }
+
+    result_offset += 1;
+}
+print_results :: (builder: *String_Builder, using tester: *Math_Tester) {
+
+}
 
 print_header :: (builder: *String_Builder, format: string, args: ..Any) {
     print_to_builder(builder, "\n");
@@ -142,33 +240,7 @@ main :: () {
         .{"sqrt", run_golden_test(sqrt, sqrt_golden_tests)},
     ];
 
-    //
-    // Approximation Tests
-    //
-    sample_count :: 1024;
-    approx_results := struct { name: string; result: Test_Result; }.[
-        .{"sinq_halfdomain", run_approx_test(sinq, sin, .{-PI, PI, sample_count})},
-        .{"sinq_quartdomain_intrin", run_approx_test(sinq_intrin, sin, .{-PI, PI, sample_count})},
-        .{"cosq_quartdomain_intrin", run_approx_test(cosq_intrin, cos, .{-PI/2, PI/2, sample_count})},
-
-        .{"asin_intrin1", run_approx_test(asin_intrin1, asin, .{0.0, 1.0, sample_count})},
-        .{"asin_intrin2", run_approx_test(asin_intrin2, asin, .{0.0, 1.0, sample_count})},
-        .{"asin_intrin3", run_approx_test(asin_intrin3, asin, .{0.0, 1.0, sample_count})},
-
-        .{"sqrt_intrin",     run_approx_test(sqrt_intrin,     sqrt, .{0.0, 1.0, sample_count})},
-        .{"sqrt_intrin_f32", run_approx_test(sqrt_intrin_f32, sqrt, .{0.0, 1.0, sample_count})},
-        .{"sqrt_intrin_rcp", run_approx_test(sqrt_intrin_rcp, sqrt, .{0.0, 1.0, sample_count})},
-    ];
-
-    //
-    // Print Results
-    //
-    format_float := *context.print_style.default_format_float;
-    format_float.mode = .SHORTEST;
-    format_float.trailing_width = 3;
-
     builder: String_Builder;
-
     print_header(*builder, "Golden Data Test Summary (error_threshold=%)", absolute_error_threshold);
     for golden_results {
         using it;
@@ -180,18 +252,45 @@ main :: () {
             print_to_builder(*builder, "- %: no tests cases\n", name);
         }
     }
+    write_builder(*builder);
+    print("\n");
 
-    print_header(*builder, "Approx. Test Summary (error_threshold=%)", absolute_error_threshold);
-    for approx_results {
-        using it;
-        using it.result;
-        if test_count > 0 {
-            print_to_builder(*builder, "- % RANGE=[%, %]: #errors=%/% max_absolute_error=%\n",
-                name, sampling.first, sampling.last, error_count, test_count, max_absolute_error);
-        } else {
-            print_to_builder(*builder, "- %: no tests cases\n", name);
+    tester: Math_Tester;
+    while math_test(*tester, -PI, PI) {
+        input := tester.input_value;
+        actual := sin(input);
+        result: float64;
+
+        for n: 1..cast(u64, 10) {
+            result = sint(input, n);
+            test_result(*tester, actual, result, "sin_taylor%", n);
         }
+
+        result = sinq(input);
+        test_result(*tester, actual, result, "sinq_halfdomain");
+
+        result = sinq_intrin(input);
+        test_result(*tester, actual, result, "sinq_quartdomain_intrin");
     }
 
+    while math_test(*tester, -PI/2, PI/2) {
+        test_result(*tester, cos(tester.input_value), cosq_intrin(tester.input_value), "cosq_quartdomain_intrin");
+    }
+
+    while math_test(*tester, 0.0, 1.0) {
+        actual := asin(tester.input_value);
+        test_result(*tester, actual, asin_intrin1(tester.input_value), "asin_intrin1");
+        test_result(*tester, actual, asin_intrin2(tester.input_value), "asin_intrin2");
+        test_result(*tester, actual, asin_intrin3(tester.input_value), "asin_intrin3");
+    }
+
+    while math_test(*tester, 0.0, 1.0) {
+        actual := sqrt(tester.input_value);
+        test_result(*tester, actual, sqrt_intrin(tester.input_value), "sqrt_intrin");
+        test_result(*tester, actual, sqrt_intrin_f32(tester.input_value), "sqrt_intrin_f32");
+        test_result(*tester, actual, sqrt_intrin_rcp(tester.input_value), "sqrt_intrin_rcp");
+    }
+
+    print_results(*builder, *tester);
     write_builder(*builder);
 }
