@@ -13,7 +13,10 @@ Test_Result :: struct {
     test_count: u64;
     error_count: u64;
     max_absolute_error: float64;
-    sampling: Sampling;
+}
+
+Golden_Test_Result :: struct {
+    name: string; result: Test_Result;
 }
 
 compute_proc_type :: #type (float64) -> float64;
@@ -35,15 +38,33 @@ run_golden_test :: ($compute_proc: compute_proc_type, test_cases: []Test_Case) -
         xx test_cases.count,
         error_count,
         max_absolute_error,
-        .{},
     };
     return result;
 }
+print_header :: (builder: *String_Builder, format: string, args: ..Any) {
+    print_to_builder(builder, "\n");
 
-Sampling :: struct {
-    first: float64;
-    last: float64;
-    count: u64;
+    before_length := builder_string_length(builder);
+    print_to_builder(builder, format, ..args);
+    header_length := builder_string_length(builder) - before_length;
+
+    print_to_builder(builder, "\n");
+
+    for 1..header_length  print_to_builder(builder, "-");
+    print_to_builder(builder, "\n");
+}
+print_results :: (builder: *String_Builder, golden_results: []Golden_Test_Result) {
+    print_header(builder, "Golden Data Test Summary (error_threshold=%)", absolute_error_threshold);
+    for golden_results {
+        using it;
+        using it.result;
+        if test_count > 0 {
+            print_to_builder(builder, "- %: #errors=%/% max_absolute_error=%\n",
+                name, error_count, test_count, max_absolute_error);
+        } else {
+            print_to_builder(builder, "- %: no tests cases\n", name);
+        }
+    }
 }
 
 libintrinsicscpp :: #library,no_dll "libintrinsicscpp";
@@ -115,6 +136,9 @@ Math_Tester_Result :: struct {
     diff_at_max_error: float64;
 }
 Math_Tester :: struct {
+    builder: *String_Builder; // NOTE(ryan): optional - set at initialization
+    fallback_builder: String_Builder;
+
     step_size: float64;
     sample_index: u64;
     running: bool;
@@ -143,7 +167,12 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
     if running {
         sample_index += 1;
     } else {
+        // NOTE(ryan): test was started for first time or restarted after completing
         results.data = results_storage.data;
+
+        if !builder {
+            builder = *fallback_builder;
+        }
 
         sample_index = 0;
         running = true;
@@ -160,12 +189,12 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
         results.count += xx result_offset;
         if results.count > results_storage.count {
             results.count = results_storage.count;
-            print("ERROR: out of room to store test results.\n");
+            print_to_builder(builder, "ERROR: out of room to store test results.\n");
         }
 
-        print("\n");
-        print("max abs error               (avg error                  )    input value\n");
-        print("--------------------------- ----------------------------- -- ---------------------------\n");
+        print_to_builder(builder, "\n");
+        print_to_builder(builder, "max abs error               (avg error                  )    input value\n");
+        print_to_builder(builder, "--------------------------- ----------------------------- -- ---------------------------\n");
         while reported_result_count < xx results.count {
             using test_result := *results[reported_result_count];
 
@@ -177,10 +206,14 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
                 format_float.trailing_width = 24;
                 format_float.mode = .DECIMAL;
 
-                print("% (%) at % [%]\n", diff_at_max_error, average_diff(test_result), input_at_max_error, label);
+                print_to_builder(builder, "% (%) at % [%]\n", diff_at_max_error, average_diff(test_result), input_at_max_error, label);
             }
 
             reported_result_count += 1;
+        }
+
+        if builder == *fallback_builder {
+            write_builder(builder);
         }
     }
 
@@ -212,50 +245,27 @@ test_result :: (using tester: *Math_Tester, actual: float64, result: float64, la
 
     result_offset += 1;
 }
-print_results :: (builder: *String_Builder, using tester: *Math_Tester) {
+print_results :: (using tester: *Math_Tester) {
 
-}
-
-print_header :: (builder: *String_Builder, format: string, args: ..Any) {
-    print_to_builder(builder, "\n");
-
-    before_length := builder_string_length(builder);
-    print_to_builder(builder, format, ..args);
-    header_length := builder_string_length(builder) - before_length;
-
-    print_to_builder(builder, "\n");
-
-    for 1..header_length  print_to_builder(builder, "-");
-    print_to_builder(builder, "\n");
 }
 
 main :: () {
+    builder: String_Builder;
+
     //
     // Golden Tests
     //
-    golden_results := struct { name: string; result: Test_Result; }.[
+    golden_results := Golden_Test_Result.[
         .{"sin",  run_golden_test(sin,  sin_golden_tests)},
         .{"cos",  run_golden_test(cos,  cos_golden_tests)},
         .{"asin", run_golden_test(asin, asin_golden_tests)},
         .{"sqrt", run_golden_test(sqrt, sqrt_golden_tests)},
     ];
-
-    builder: String_Builder;
-    print_header(*builder, "Golden Data Test Summary (error_threshold=%)", absolute_error_threshold);
-    for golden_results {
-        using it;
-        using it.result;
-        if test_count > 0 {
-            print_to_builder(*builder, "- %: #errors=%/% max_absolute_error=%\n",
-                name, error_count, test_count, max_absolute_error);
-        } else {
-            print_to_builder(*builder, "- %: no tests cases\n", name);
-        }
-    }
-    write_builder(*builder);
-    print("\n");
+    print_results(*builder, golden_results);
 
     tester: Math_Tester;
+    tester.builder = *builder;
+
     while math_test(*tester, -PI, PI) {
         input := tester.input_value;
         actual := sin(input);
@@ -291,6 +301,6 @@ main :: () {
         test_result(*tester, actual, sqrt_intrin_rcp(tester.input_value), "sqrt_intrin_rcp");
     }
 
-    print_results(*builder, *tester);
+    print_results(*tester);
     write_builder(*builder);
 }
