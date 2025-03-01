@@ -85,19 +85,63 @@ sinq :: (input: float64) -> float64 {
 
 sint :: (input: float64, $$order: u64 = 5) -> float64 {
     result := input;
+    squared := input * input;
 
     input_product := input;
-    coefficient: float64 = 1;
-    sign: float64 = -1.0;
     i: u64 = 3;
     while i <= order {
-        coefficient /= (i * (i-1));
-        input_product *= input*input;
-        result += sign * coefficient * input_product;
+        input_product *= squared;
+        result += sin_taylor_coeff(i) * input_product;
 
-        sign *= -1;
         i += 2;
     }
+
+    return result;
+}
+
+PRECOMP_MAX :: 40;
+sin_taylor_precomputed := #run -> [PRECOMP_MAX]float64 {
+    out: [PRECOMP_MAX]float64;
+    out[0] = 0;
+
+    coefficient: float64 = 1.0;
+    for i: 1..out.count-1 {
+        coefficient /= i;
+
+        sign := ifx ((i+1) % 4) / 2 == 0 then -1.0 else 1.0;
+        out[i] = (i & 1) * sign * coefficient;
+    }
+
+    return out;
+}
+sin_taylor_coeff :: ($$index: u64) -> float64 {
+    if index < sin_taylor_precomputed.count {
+        return sin_taylor_precomputed[index];
+    } else {
+        result := 1.0;
+        for i: 2..index {
+            result *= i;
+        }
+
+        sign := ifx ((index+1) % 4) / 2 == 0 then -1.0 else 1.0;
+        sign *= (index & 1); // even terms are zero for taylor series of sin(t) taken at x=0
+        result = sign / result;
+        return result;
+    }
+}
+
+sint_horner :: (input: float64, $$order: u64 = 5) -> float64 {
+    result: float64 = 0;
+    squared := input * input;
+
+    i: u64 = 1;
+    while i <= order {
+        index := order - (i-1);
+        result = squared * result + sin_taylor_coeff(index);
+
+        i += 2;
+    }
+    result *= input;
 
     return result;
 }
@@ -271,9 +315,15 @@ main :: () {
         actual := sin(input);
         result: float64;
 
-        for n: 1..cast(u64, 20) {
+        taylor_highest_term :: 31;
+        for n: 1..cast(u64, taylor_highest_term) {
             result = sint(input, n);
             test_result(*tester, actual, result, "sin_taylor%", n);
+
+            result = sint_horner(input, n);
+            test_result(*tester, actual, result, "sin_taylor%_horner", n);
+
+            n += 1;
         }
 
         result = sinq(input);
