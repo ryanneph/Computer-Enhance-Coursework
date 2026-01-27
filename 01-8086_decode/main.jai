@@ -657,7 +657,7 @@ _decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8) -> (Operand, byte
     imm: Operand;
 
     if (!field_w || field_s) {
-        field_low := <<(head_imm);
+        field_low := (.*)(head_imm);
         if !field_s
             imm = operand_immediate(field_low, 0);
         else {
@@ -665,8 +665,8 @@ _decode_immediate :: (head_imm: *u8, field_s: u8, field_w: u8) -> (Operand, byte
         }
         advance_count = 1;
     } else {
-        field_low  := <<(head_imm);
-        field_high := <<(head_imm + 1);
+        field_low  := (.*)(head_imm);
+        field_high := (.*)(head_imm + 1);
         imm = operand_immediate(field_low, field_high);
         advance_count = 2;
     }
@@ -715,13 +715,13 @@ _decode_rm :: (head_disp: *u8, field_mod: u8, field_rm: u8, field_w: u8)
         }
 
         if rm.mem.mode != .NO_DISP {
-            field_low  := <<(head_disp);
-            field_high := ifx rm.mem.mode == .DISP_U16 then <<(head_disp + 1) else 0;
+            field_low  := (.*)(head_disp);
+            field_high := ifx rm.mem.mode == .DISP_U16 then (.*)(head_disp + 1) else 0;
             rm.mem.disp = immediate(field_low, field_high);
         } else if field_rm == 0b110 {
             // DIRECT ADDRESSING
-            field_low  := <<(head_disp);
-            field_high := <<(head_disp + 1);
+            field_low  := (.*)(head_disp);
+            field_high := (.*)(head_disp + 1);
             rm = operand_memory_direct(immediate(field_low, field_high), cast(bool) field_w);
             advance_count = 2;
         }
@@ -736,10 +736,10 @@ _decode_rm :: (head_disp: *u8, field_mod: u8, field_rm: u8, field_w: u8)
 // INSTRUCTION DECODING
 //
 decode_arith_imm_to_accum :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_inst := (<<head & 0b1111_1110) >> 1;
-    field_w    := (<<head & 0b0000_0001);
-    field_low  := <<(head + 1);
-    field_high := ifx field_w then <<(head + 2) else 0;
+    field_inst := (head.* & 0b1111_1110) >> 1;
+    field_w    := (head.* & 0b0000_0001);
+    field_low  := (.*)(head + 1);
+    field_high := ifx field_w then (.*)(head + 2) else 0;
 
     inst.desc = "immediate to accumulator";
 
@@ -748,18 +748,18 @@ decode_arith_imm_to_accum :: (inst: *Instruction, head: *u8) -> (advance_count: 
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, inst=% w=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_inst, field_w, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), field_inst, field_w, inst.desc);
     }
 
     return 2 + field_w;
 }
 
 decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_s    := (<<head       & 0b0000_0010) >> 1;
-    field_w    := (<<head       & 0b0000_0001);
-    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_inst := (<<(head + 1) & 0b0011_1000) >> 3;
-    field_rm   := (<<(head + 1) & 0b0000_0111);
+    field_s    := (head.*       & 0b0000_0010) >> 1;
+    field_w    := (head.*       & 0b0000_0001);
+    field_mod  := ((.*)(head + 1) & 0b1100_0000) >> 6;
+    field_inst := ((.*)(head + 1) & 0b0011_1000) >> 3;
+    field_rm   := ((.*)(head + 1) & 0b0000_0111);
 
     inst.desc = "immediate to register/memory";
     inst.explicit_size = true;
@@ -788,7 +788,7 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
     assert(inst.type != .INVALID, "Failed to match bit pattern %", field_inst);
 
     // HACK(ryan): TEST and ADD share a 3-bit pattern
-    if (<<head & 0b1111_1110) == 0b1111_0110
+    if (head.* & 0b1111_1110) == 0b1111_0110
         inst.type = .TEST;
 
     offset: s32 = 2;
@@ -802,7 +802,7 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, s=% w=%, mod=% inst=% rm=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_s, field_w, field_mod,
+            instruction_to_string(inst), formatHex(head.*), field_s, field_w, field_mod,
             field_inst, field_rm, inst.desc);
     }
 
@@ -810,7 +810,7 @@ decode_arith_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32
 }
 
 decode_arith_reg_with_accum :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_reg := <<head & 0b0000_0111;
+    field_reg := head.* & 0b0000_0111;
 
     inst.desc = "register with accumulator";
     inst.dst = operand_register(.AX);
@@ -818,18 +818,18 @@ decode_arith_reg_with_accum :: (inst: *Instruction, head: *u8) -> (advance_count
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, reg=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_reg, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), field_reg, inst.desc);
     }
 
     return 1;
 }
 
 decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_v    := (<< head      & 0b0000_0010) >> 1; // 0: src is 1, 1: src is "cl" register
-    field_w    := (<< head      & 0b0000_0001);
-    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_inst := (<<(head + 1) & 0b0011_1000) >> 3;
-    field_rm   := (<<(head + 1) & 0b0000_0111);
+    field_v    := (head.*      & 0b0000_0010) >> 1; // 0: src is 1, 1: src is "cl" register
+    field_w    := (head.*      & 0b0000_0001);
+    field_mod  := ((.*)(head + 1) & 0b1100_0000) >> 6;
+    field_inst := ((.*)(head + 1) & 0b0011_1000) >> 3;
+    field_rm   := ((.*)(head + 1) & 0b0000_0111);
 
     inst_table ::  Instruction_Type.[
         .ROL,
@@ -855,7 +855,7 @@ decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, v=% w=%, mod=% inst=% rm=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_v, field_w, field_mod,
+            instruction_to_string(inst), formatHex(head.*), field_v, field_w, field_mod,
             field_inst, field_rm, inst.desc);
     }
 
@@ -863,7 +863,7 @@ decode_bit_ops :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 }
 
 decode_call_direct_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_short := (<<head & 0b0000_0010) >> 1;
+    field_short := (head.* & 0b0000_0010) >> 1;
 
     inst.desc = "direct within segment";
     inst.operand_count = .UNARY;
@@ -872,21 +872,21 @@ decode_call_direct_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: 
     rel: u16;
     if field_short
         // automatically sign extends 8 bits to 16 bits
-        inst.dst = operand_increment(<<(head + 1));
+        inst.dst = operand_increment((.*)(head + 1));
     else
-        inst.dst = operand_increment(<<(head + 1), <<(head + 2));
+        inst.dst = operand_increment((.*)(head + 1), (.*)(head + 2));
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, increment=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), inst.dst.inc.val, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), inst.dst.inc.val, inst.desc);
     }
 
     return cast(s32)inst.size;
 }
 
 decode_call_indirect_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_mod   := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_rm    := (<<(head + 1) & 0b0000_0111);
+    field_mod   := ((.*)(head + 1) & 0b1100_0000) >> 6;
+    field_rm    := ((.*)(head + 1) & 0b0000_0111);
 
     inst.desc = "indirect within segment";
     inst.operand_count = .UNARY;
@@ -896,7 +896,7 @@ decode_call_indirect_in_seg :: (inst: *Instruction, head: *u8) -> (advance_count
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x% mod=% rm=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_mod, field_rm, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), field_mod, field_rm, inst.desc);
     }
 
     return 2 + extra_advance;
@@ -906,20 +906,20 @@ decode_unary_imm8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.desc = "unary op with 8 bit immediate data";
     inst.operand_count = .UNARY;
 
-    inst.dst = operand_immediate(<<(head + 1));
+    inst.dst = operand_immediate((.*)(head + 1));
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), inst.desc);
+            instruction_to_string(inst), formatHex(head.*), inst.desc);
     }
 
     return 2;
 }
 
 decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_fv   := (<<head & 0b0000_1000) >> 3; // fixed:0, variable:1
-    field_inst := (<<head & 0b0000_0010) >> 1; // IN:0, OUT:1
-    field_w    :=  <<head & 0b0000_0001;
+    field_fv   := (head.* & 0b0000_1000) >> 3; // fixed:0, variable:1
+    field_inst := (head.* & 0b0000_0010) >> 1; // IN:0, OUT:1
+    field_w    :=  head.* & 0b0000_0001;
 
     accum := operand_register(ifx field_w then Register.AX else .AL);
 
@@ -931,7 +931,7 @@ decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
         port = operand_register(.DX);
     } else {
         inst.desc = "accumulator with fixed i/o port";
-        port = operand_immediate(<<(head + 1));
+        port = operand_immediate((.*)(head + 1));
     }
 
     inst.dst = ifx field_inst then port  else accum;
@@ -939,7 +939,7 @@ decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, field_inst=% field_w=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_inst, field_w, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), field_inst, field_w, inst.desc);
     }
 
     advance_count : s32 = 1 + cast(s32) ifx !field_fv then 1 else 0;
@@ -947,8 +947,8 @@ decode_in_out :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 }
 
 decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_inst1 := <<head & 0b1000_0000; // found a bit that is 0 for first 8, 1 for next 4
-    field_inst2 := <<head & 0b0000_1111;
+    field_inst1 := head.* & 0b1000_0000; // found a bit that is 0 for first 8, 1 for next 4
+    field_inst2 := head.* & 0b0000_1111;
 
     // NOTE(ryan): it would more performant to encode the instruction type into the main opcode
     // table, since it is entirely determined by the first byte, and that is what addresses the
@@ -988,21 +988,21 @@ decode_jump_cond_inc8 :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
     inst.operand_count = .UNARY;
     inst.size = 2;
 
-    inst.dst = operand_increment(<<(head +1));
+    inst.dst = operand_increment((.*)(head +1));
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, increment=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), inst.dst.inc.val, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), inst.dst.inc.val, inst.desc);
     }
 
     return cast(s32) inst.size;
 }
 
 decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_sr  := (<< head      & 0b0000_1000) >> 3; // 0:seg, 1:reg
-    field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_reg := (<<(head + 1) & 0b0011_1000) >> 3;
-    field_rm  := (<<(head + 1) & 0b0000_0111);
+    field_sr  := (head.*      & 0b0000_1000) >> 3; // 0:seg, 1:reg
+    field_mod := ((.*)(head + 1) & 0b1100_0000) >> 6;
+    field_reg := ((.*)(head + 1) & 0b0011_1000) >> 3;
+    field_rm  := ((.*)(head + 1) & 0b0000_0111);
 
     descs :: string.[
         "load far pointer to segment+register",
@@ -1024,7 +1024,7 @@ decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), inst.desc);
+            instruction_to_string(inst), formatHex(head.*), inst.desc);
      }
 
     return 2 + extra_advance;
@@ -1033,11 +1033,11 @@ decode_load_to_reg_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32
 decode_mov_accumulator :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.desc = "memory to/from accumulator";
 
-    field_to_mem := (<<head & 0b10) >> 1;
-    field_w      :=  <<head & 0b01;
+    field_to_mem := (head.* & 0b10) >> 1;
+    field_w      :=  head.* & 0b01;
 
-    field_low  := <<(head + 1);
-    field_high := <<(head + 2);
+    field_low  := (.*)(head + 1);
+    field_high := (.*)(head + 2);
 
     reg := operand_register(ifx field_w then Register.AX else Register.AL);
     mem := operand_memory_direct(immediate(field_low, field_high), word=cast(bool) field_w);
@@ -1047,17 +1047,17 @@ decode_mov_accumulator :: (inst: *Instruction, head: *u8) -> (advance_count: s32
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, to_mem=%, w=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_to_mem, field_w, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), field_to_mem, field_w, inst.desc);
     }
 
     return 3;
 }
 
 decode_mov_imm_to_reg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_w    := (<< head       & 0b0000_1000) >> 3;
-    field_reg  :=  << head       & 0b0000_0111;
-    field_low  :=  <<(head + 1);
-    field_high :=  ifx field_w then <<(head + 2) else 0;
+    field_w    := (head.*       & 0b0000_1000) >> 3;
+    field_reg  :=  head.*       & 0b0000_0111;
+    field_low  :=  (.*)(head + 1);
+    field_high :=  ifx field_w then (.*)(head + 2) else 0;
 
     inst.desc = "immediate to register";
 
@@ -1067,7 +1067,7 @@ decode_mov_imm_to_reg :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, w=% reg=%, low=%, high=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_w, field_reg,
+            instruction_to_string(inst), formatHex(head.*), field_w, field_reg,
             field_low, field_high, inst.desc);
     }
 
@@ -1075,9 +1075,9 @@ decode_mov_imm_to_reg :: (inst: *Instruction, head: *u8) -> (advance_count: s32)
 }
 
 decode_mov_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_w := <<head & 0b0000_0001;
-    field_mod := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_rm  := (<<(head + 1) & 0b0000_0111);
+    field_w := head.* & 0b0000_0001;
+    field_mod := ((.*)(head + 1) & 0b1100_0000) >> 6;
+    field_rm  := ((.*)(head + 1) & 0b0000_0111);
 
     inst.desc = "move immediate to register";
 
@@ -1093,15 +1093,15 @@ decode_mov_imm_to_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) 
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, w=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_w, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), field_w, inst.desc);
     }
 
     return offset;
 }
 
 decode_string_manipulation :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_inst := (<<head & 0b0000_1110) >> 1;
-    field_w    :=  <<head & 0b0000_0001;
+    field_inst := (head.* & 0b0000_1110) >> 1;
+    field_w    :=  head.* & 0b0000_0001;
 
     inst_table ::  Instruction_Type.[
         .INVALID,
@@ -1123,7 +1123,7 @@ decode_string_manipulation :: (inst: *Instruction, head: *u8) -> (advance_count:
     inst.flags |= ifx !field_w then Instruction_Flags.STRING_BYTE else .STRING_WORD;
 
     if DEBUG_DECODE {
-        print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
+        print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(head.*), inst.desc);
     }
 
     return 1;
@@ -1133,11 +1133,11 @@ decode_no_operands :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.desc = "no operands";
     inst.operand_count = .ZERO;
 
-    if <<head == 0xCB
+    if head.* == 0xCB
         inst.type = .RETF;
 
     if DEBUG_DECODE {
-        print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
+        print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(head.*), inst.desc);
     }
 
     if (inst.type == .AAM || inst.type == .AAD)
@@ -1147,7 +1147,7 @@ decode_no_operands :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 }
 
 decode_push_pop_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_seg := (<<(head) & 0b0001_1000) >> 3;
+    field_seg := ((.*)(head) & 0b0001_1000) >> 3;
 
     inst.desc = "segment register to/from stack";
     inst.operand_count = .UNARY;
@@ -1156,25 +1156,25 @@ decode_push_pop_seg :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, seg=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_seg, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), field_seg, inst.desc);
     }
 
     return 1;
 }
 
 decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_d    := (<<head       & 0b0000_0010) >> 1;
-    field_w    := (<<head       & 0b0000_0001);
-    field_mod  := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_reg  := (<<(head + 1) & 0b0011_1000) >> 3;
-    field_rm   := (<<(head + 1) & 0b0000_0111);
+    field_d    := (head.*       & 0b0000_0010) >> 1;
+    field_w    := (head.*       & 0b0000_0001);
+    field_mod  := ((.*)(head + 1) & 0b1100_0000) >> 6;
+    field_reg  := ((.*)(head + 1) & 0b0011_1000) >> 3;
+    field_rm   := ((.*)(head + 1) & 0b0000_0111);
 
     inst.desc = "Reg/memory with register to either";
 
     // Special case for move to/from segment register
     reg: Operand;
-    if <<head == 0x8C || <<head == 0x8E {
-        reg = operand_segment((<<(head + 1) & 0b0001_1000) >> 3);
+    if head.* == 0x8C || head.* == 0x8E {
+        reg = operand_segment(((.*)(head + 1) & 0b0001_1000) >> 3);
         field_w = 1; // segment registers always use 16-bit moves
     } else
         reg = operand_register(field_reg, field_w);
@@ -1186,7 +1186,7 @@ decode_reg_with_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, d=% w=%, mod=% reg=% rm=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_d, field_w,
+            instruction_to_string(inst), formatHex(head.*), field_d, field_w,
             field_mod, field_reg, field_rm, inst.desc);
     }
 
@@ -1197,20 +1197,20 @@ decode_ret_pop_sp :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
     inst.desc = "return adding immed to stack pointer";
     inst.operand_count = .UNARY;
 
-    if <<head == 0xCA
+    if head.* == 0xCA
         inst.type = .RETF;
 
-    inst.dst = operand_immediate(<<(head + 1), <<(head + 2));
+    inst.dst = operand_immediate((.*)(head + 1), (.*)(head + 2));
 
     if DEBUG_DECODE {
-        print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(<<head), inst.desc);
+        print("%  ; {first_byte=0x%} (%)\n", instruction_to_string(inst), formatHex(head.*), inst.desc);
     }
 
     return 3;
 }
 
 decode_unary_reg ::    (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_reg := (<<(head) & 0b0000_0111);
+    field_reg := ((.*)(head) & 0b0000_0111);
 
     inst.desc = "register to/from stack";
     inst.operand_count = .UNARY;
@@ -1219,18 +1219,18 @@ decode_unary_reg ::    (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, reg=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_reg, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), field_reg, inst.desc);
     }
 
     return 1;
 }
 
 decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_w     :=  << head      & 0b0000_0001;
-    field_mod   := (<<(head + 1) & 0b1100_0000) >> 6;
-    field_inst1 : s32 = (<< head);
-    field_inst2 : s32 = (<<(head + 1) & 0b0011_1000) >> 3;
-    field_rm    := (<<(head + 1) & 0b0000_0111);
+    field_w     :=  head.*      & 0b0000_0001;
+    field_mod   := ((.*)(head + 1) & 0b1100_0000) >> 6;
+    field_inst1 : s32 = (head.*);
+    field_inst2 : s32 = ((.*)(head + 1) & 0b0011_1000) >> 3;
+    field_rm    := ((.*)(head + 1) & 0b0000_0111);
 
     field_inst := ((field_inst1 << 3) | field_inst2);
 
@@ -1302,17 +1302,17 @@ decode_unary_rm :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=0x%, w=% mod=% rm=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), field_w, field_mod, field_rm, inst.desc);
+            instruction_to_string(inst), formatHex(head.*), field_w, field_mod, field_rm, inst.desc);
     }
 
     return 2 + extra_advance;
 }
 
 decode_jump_direct_far :: (inst: *Instruction, head: *u8) -> (advance_count: s32) {
-    field_ip_lo := <<(head + 1);
-    field_ip_hi := <<(head + 2);
-    field_cs_lo := <<(head + 3);
-    field_cs_hi := <<(head + 4);
+    field_ip_lo := (.*)(head + 1);
+    field_ip_hi := (.*)(head + 2);
+    field_cs_lo := (.*)(head + 3);
+    field_cs_hi := (.*)(head + 4);
 
 
     inst.desc = "call direct intersegment";
@@ -1324,7 +1324,7 @@ decode_jump_direct_far :: (inst: *Instruction, head: *u8) -> (advance_count: s32
 
     if DEBUG_DECODE {
         print("%  ; {first_byte=%} (%)\n",
-            instruction_to_string(inst), formatHex(<<head), inst.desc);
+            instruction_to_string(inst), formatHex(head.*), inst.desc);
     }
     return 5;
 }
@@ -1337,7 +1337,7 @@ decode_all_prefix_bytes :: (head: *u8) -> (Instruction_Flags, segment_override: 
     segment_override := Register.INVALID;
     advance_count: s32 = 0;
     while true {
-        if <<head == {
+        if head.* == {
             case 0b1111_0000;
                 flags |= .LOCK;
             case 0b1111_0010;
@@ -1406,12 +1406,12 @@ decode_once_actually :: (head: *u8) -> (Instruction, advance: s32) {
     flags, segment_override, prefix_advance := decode_all_prefix_bytes(head);
     head += prefix_advance;
 
-    opcode := <<head;
+    opcode := head.*;
     assert(opcode < opcode_table.ops.count);
     op_info := opcode_table.ops[opcode];
 
     if !op_info.decode
-        assert(false, "Unknown opcode for first byte: 0x%", formatHex(<<head));
+        assert(false, "Unknown opcode for first byte: 0x%", formatHex(head.*));
 
     inst: Instruction;
     inst.type = op_info.type; // NOTE(ryan): will be modified by decode proc if initially .INVALID in decode table
@@ -1662,8 +1662,8 @@ load_operand :: (state: *Processor_State, operand: Operand) -> u16 {
 }
 
 set_flag :: (flags: *u16, flag: Flag, value: bool) {
-    if value  { (<<flags) |=   cast(u16) flag;  }
-    else      { (<<flags) &= ~(cast(u16) flag); }
+    if value  { (flags.*) |=   cast(u16) flag;  }
+    else      { (flags.*) &= ~(cast(u16) flag); }
 }
 determine_flag_parity :: (value: u16) -> bool {
     // parity (low-order 8-bits have even number of set bits)
@@ -1821,7 +1821,7 @@ exec_interrupt :: (state: *Processor_State, inst: Instruction) {
             strlen :: (addr: *u8) -> s64 {
                 len := 0;
                 while true {
-                    if <<(addr + len) == 0x0  break;
+                    if (.*)(addr + len) == 0x0  break;
                     len += 1;
                 }
                 return len;
@@ -2048,21 +2048,21 @@ estimate_perf_mov :: (state: *Processor_State, inst: *Instruction) -> s32 {
     } else if OP_TYPES(.REGISTER, .REGISTER) {
         return 2;
     } else if OP_TYPES(.REGISTER, .MEMORY) {
-        return 8 + estimate_perf_effective_addr(state, *inst.src.mem, inst.segment_override);
+        return 8 + estimate_perf_effective_addr(state, inst.src.mem, inst.segment_override);
     } else if OP_TYPES(.MEMORY, .REGISTER) {
-        return 9 + estimate_perf_effective_addr(state, *inst.dst.mem, inst.segment_override);
+        return 9 + estimate_perf_effective_addr(state, inst.dst.mem, inst.segment_override);
     } else if OP_TYPES(.REGISTER, .IMMEDIATE) {
         return 4;
     } else if OP_TYPES(.MEMORY, .IMMEDIATE) {
-        return 10 + estimate_perf_effective_addr(state, *inst.dst.mem, inst.segment_override);
+        return 10 + estimate_perf_effective_addr(state, inst.dst.mem, inst.segment_override);
     } else if OP_TYPES(.SEGMENT, .REGISTER) {
         return 2;
     } else if OP_TYPES(.SEGMENT, .MEMORY) {
-        return 8 + estimate_perf_effective_addr(state, *inst.src.mem, inst.segment_override);
+        return 8 + estimate_perf_effective_addr(state, inst.src.mem, inst.segment_override);
     } else if OP_TYPES(.REGISTER, .SEGMENT) {
         return 2;
     } else if OP_TYPES(.MEMORY, .SEGMENT) {
-        return 9 + estimate_perf_effective_addr(state, *inst.dst.mem, inst.segment_override);
+        return 9 + estimate_perf_effective_addr(state, inst.dst.mem, inst.segment_override);
     }
     assert(false, "unhandled instruction: %", inst);
     return -9999;

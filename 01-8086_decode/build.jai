@@ -1,5 +1,6 @@
 #import "Basic";
 #import "Compiler";
+#import "Metaprogram_Plugins";
 
 build :: () {
     w := compiler_create_workspace("default");
