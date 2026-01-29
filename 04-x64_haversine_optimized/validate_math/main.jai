@@ -1,5 +1,6 @@
 #import "Basic";
 #import "Math";
+#import "Sort";
 
 #load "golden_data.jai";
 absolute_error_threshold: float64 : 1.0E-12;
@@ -207,12 +208,16 @@ average_diff :: (using test_result: Math_Tester_Result) -> float64 {
     result := ifx diff_count > 0 then total_diff / cast(float64, diff_count) else 0;
     return result;
 }
+
+// run one iteration of the tester, storing the next vale to .input
+// and return true if more iterations remain
 math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 1_000_000) -> bool {
     if running {
         sample_index += 1;
     } else {
         // NOTE(ryan): test was started for first time or restarted after completing
         results.data = results_storage.data;
+        results.count = 0;
 
         if !builder {
             builder = *fallback_builder;
@@ -236,24 +241,45 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
             print_to_builder(builder, "ERROR: out of room to store test results.\n");
         }
 
+        // reusable float formatting
+        format_context := context;
+        format_float := *format_context.print_style.default_format_float;
+        format_float.zero_removal = .NO;
+        format_float.positive_number_prefix = .PLUS;
+        format_float.trailing_width = 24;
+        format_float.mode = .DECIMAL;
+
         print_to_builder(builder, "\n");
         print_to_builder(builder, "max abs error               (avg error                  )    input value\n");
         print_to_builder(builder, "--------------------------- ----------------------------- -- ---------------------------\n");
         while reported_result_count < xx results.count {
             using test_result := *results[reported_result_count];
 
-            format_context := context;
             push_context format_context {
-                format_float := *format_context.print_style.default_format_float;
-                format_float.zero_removal = .NO;
-                format_float.positive_number_prefix = .PLUS;
-                format_float.trailing_width = 24;
-                format_float.mode = .DECIMAL;
-
                 print_to_builder(builder, "% (%) at % [%]\n", diff_at_max_error, average_diff(test_result), input_at_max_error, label);
             }
 
             reported_result_count += 1;
+        }
+
+        // sort results by ascending max error, use references to avoid copying entire structs when sorting
+        result_references: [..] *Math_Tester_Result;
+        for *result: results {
+            array_add(*result_references, result);
+        }
+        compare :: (a: *Math_Tester_Result, b: *Math_Tester_Result) -> float64 {
+            return a.max_absolute_error - b.max_absolute_error;
+        }
+        quick_sort(result_references, compare);
+
+        print_to_builder(builder, "sorted by max abs error (top ascending)\n");
+        print_to_builder(builder, "------------------------------------------\n");
+        for result, i: result_references {
+            using result;
+
+            push_context format_context {
+                print_to_builder(builder, "% (%) [%]\n", max_absolute_error, average_diff(result), label);
+            }
         }
 
         if builder == *fallback_builder {
@@ -263,6 +289,8 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
 
     return running;
 }
+
+// record the result for the current iteration
 test_result :: (using tester: *Math_Tester, actual: float64, result: float64, label: string, args: ..Any) {
     test_result := *error_result;
     result_index := cast(u64, results.count) + result_offset;
@@ -288,9 +316,6 @@ test_result :: (using tester: *Math_Tester, actual: float64, result: float64, la
     }
 
     result_offset += 1;
-}
-print_results :: (using tester: *Math_Tester) {
-
 }
 
 main :: () {
@@ -351,6 +376,5 @@ main :: () {
         test_result(*tester, actual, sqrt_intrin_rcp(tester.input_value), "sqrt_intrin_rcp");
     }
 
-    print_results(*tester);
     write_builder(*builder);
 }
