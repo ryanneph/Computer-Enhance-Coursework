@@ -55,7 +55,7 @@ print_header :: (builder: *String_Builder, format: string, args: ..Any) {
     print_to_builder(builder, "\n");
 }
 print_results :: (builder: *String_Builder, golden_results: []Golden_Test_Result) {
-    print_header(builder, "Golden Data Test Summary (error_threshold=%)", absolute_error_threshold);
+    print_header(builder, "Golden Data Test Summary (error_threshold=%)", formatFloat(absolute_error_threshold, mode=.SCIENTIFIC));
     for golden_results {
         using it;
         using it.result;
@@ -69,6 +69,7 @@ print_results :: (builder: *String_Builder, golden_results: []Golden_Test_Result
 }
 
 libintrinsicscpp :: #library,no_dll "libintrinsicscpp";
+// quadratic approximation
 sinq :: (input: float64) -> float64 {
     A: float64 : -4.0 / (PI64 * PI64);
     B: float64 : 4.0 / PI64;
@@ -84,22 +85,7 @@ sinq :: (input: float64) -> float64 {
     return result;
 }
 
-sint :: (input: float64, $$order: u64 = 5) -> float64 {
-    result := input;
-    squared := input * input;
-
-    input_product := input;
-    i: u64 = 3;
-    while i <= order {
-        input_product *= squared;
-        result += sin_taylor_coeff(i) * input_product;
-
-        i += 2;
-    }
-
-    return result;
-}
-
+// precompute taylor series coefficients at compile-time
 PRECOMP_MAX :: 40;
 sin_taylor_precomputed := #run -> [PRECOMP_MAX]float64 {
     out: [PRECOMP_MAX]float64;
@@ -131,6 +117,24 @@ sin_taylor_coeff :: ($$index: u64) -> float64 {
     }
 }
 
+// taylor-series approximation
+sint :: (input: float64, $$order: u64 = 5) -> float64 {
+    result := input;
+    squared := input * input;
+
+    input_product := input;
+    i: u64 = 3;
+    while i <= order {
+        input_product *= squared;
+        result += sin_taylor_coeff(i) * input_product;
+
+        i += 2;
+    }
+
+    return result;
+}
+
+// horner's rule to evaluate polynomials more efficiently by factoring out the variable term
 sint_horner :: (input: float64, $$order: u64 = 5) -> float64 {
     result: float64 = 0;
     squared := input * input;
@@ -190,11 +194,10 @@ Math_Tester :: struct {
 
     input_value: float64; // NOTE(ryan): is set within each call to math_test();
 
-    results: []Math_Tester_Result;
-    error_result: Math_Tester_Result;
     results_storage: [256]Math_Tester_Result;
     result_offset: u64;
-    reported_result_count: u64;
+
+    sentinel_result: Math_Tester_Result;
 }
 set_label :: (using test_result: *Math_Tester_Result, format: string, args: ..Any) {
     max_len := size_of(type_of(label_storage));
@@ -216,9 +219,6 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
         sample_index += 1;
     } else {
         // NOTE(ryan): test was started for first time or restarted after completing
-        results.data = results_storage.data;
-        results.count = 0;
-
         if !builder {
             builder = *fallback_builder;
         }
@@ -235,12 +235,6 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
     } else {
         running = false;
 
-        results.count += xx result_offset;
-        if results.count > results_storage.count {
-            results.count = results_storage.count;
-            print_to_builder(builder, "ERROR: out of room to store test results.\n");
-        }
-
         // reusable float formatting
         format_context := context;
         format_float := *format_context.print_style.default_format_float;
@@ -252,14 +246,13 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
         print_to_builder(builder, "\n");
         print_to_builder(builder, "max abs error               (avg error                  )    input value\n");
         print_to_builder(builder, "--------------------------- ----------------------------- -- ---------------------------\n");
-        while reported_result_count < xx results.count {
-            using test_result := *results[reported_result_count];
 
+        results := []Math_Tester_Result.{ cast(s64, result_offset), results_storage.data };
+        for test_result: results {
+            using test_result;
             push_context format_context {
                 print_to_builder(builder, "% (%) at % [%]\n", diff_at_max_error, average_diff(test_result), input_at_max_error, label);
             }
-
-            reported_result_count += 1;
         }
 
         // sort results by ascending max error, use references to avoid copying entire structs when sorting
@@ -272,6 +265,7 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
         }
         quick_sort(result_references, compare);
 
+        print_to_builder(builder, "\n");
         print_to_builder(builder, "sorted by max abs error (top ascending)\n");
         print_to_builder(builder, "------------------------------------------\n");
         for result, i: result_references {
@@ -292,10 +286,12 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
 
 // record the result for the current iteration
 test_result :: (using tester: *Math_Tester, actual: float64, result: float64, label: string, args: ..Any) {
-    test_result := *error_result;
-    result_index := cast(u64, results.count) + result_offset;
-    if result_index < results_storage.count {
-        test_result = *results[result_index];
+    test_result := *sentinel_result;
+    if result_offset < results_storage.count {
+        test_result = *results_storage[result_offset];
+    } else {
+        print_to_builder(builder, "ERROR: out of room to store test results.\n");
+        return;
     }
 
     if sample_index == 0 {
