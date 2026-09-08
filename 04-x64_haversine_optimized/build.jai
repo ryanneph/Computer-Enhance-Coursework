@@ -3,6 +3,8 @@
 #import "Process";
 #import "String";
 
+DEBUG := false;
+
 Library_Type :: enum {
     SHARED;
     STATIC;
@@ -17,7 +19,7 @@ compile_cpp_lib :: (source_name: string, library_type: Library_Type, output: str
     }
 
     args: [..]string;
-    array_add(*args, "clang++", "-O2", "-g");
+    array_add(*args, "clang++", ifx DEBUG then "-O0" else "-O2", "-g");
 
     extension: string;
     if library_type == .SHARED {
@@ -48,7 +50,7 @@ configure_default_options :: (w: Workspace, output_name: string, output_director
     array_add(*import_paths, ..options.import_path);
     options.import_path = import_paths;
 
-    set_optimization(*options, .OPTIMIZED, preserve_debug_info=true);
+    set_optimization(*options, ifx DEBUG then .DEBUG else .OPTIMIZED, preserve_debug_info=true);
     set_build_options(options, w);
 }
 
@@ -111,6 +113,14 @@ get_compiler_error_count :: () -> u64 {
 workspaces: [..]Workspace;
 build :: () {
     set_build_options_dc(.{do_output=false});
+
+    options := get_build_options();
+    args := options.compile_time_command_line;
+    for arg: args {
+        print("arg: %\n", arg);
+        if arg == "--debug"
+            DEBUG = true;
+    }
 
     exit_code: s32 = 1;
     prepare_error_count: u64;
