@@ -151,6 +151,30 @@ sint_horner :: (input: float64, $$order: u64 = 5) -> float64 {
     return result;
 }
 
+// taylor-series approximation, computed backwards to mimic horner's version for reduced
+// error (at greater compute cost).
+sint_backward :: (input: float64, $$order: u64 = 5) -> float64 {
+    result: float64 = 0;
+    squared := input * input;
+
+    i: s64 = 1;
+    while i <= xx order {
+        power := xx order - i + 1;
+
+        product := input;
+        j := 3;
+        while j <= power {
+            product *= squared;
+            j += 2;
+        }
+        result += product * sin_taylor_coeff(xx power);
+
+        i += 2;
+    }
+
+    return result;
+}
+
 bind_to_cpp :: (name: string) -> string #compile_time {
     format := #string END
         %1 :: (input: float64) -> float64 {
@@ -177,6 +201,7 @@ Math_Tester_Result :: struct {
 
     total_diff: float64;
     diff_count: u64;
+    average_diff: float64;
 
     max_absolute_error: float64;
     input_at_max_error: float64;
@@ -207,14 +232,10 @@ set_label :: (using test_result: *Math_Tester_Result, format: string, args: ..An
     label.count = min(temp.count, max_len);
     memcpy(label.data, temp.data, label.count);
 }
-average_diff :: (using test_result: Math_Tester_Result) -> float64 {
-    result := ifx diff_count > 0 then total_diff / cast(float64, diff_count) else 0;
-    return result;
-}
 
 // run one iteration of the tester, storing the next vale to .input
 // and return true if more iterations remain
-math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 1_000_000) -> bool {
+math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 100_000_000) -> bool {
     if running {
         sample_index += 1;
     } else {
@@ -248,37 +269,56 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
         print_to_builder(builder, "--------------------------- ----------------------------- -- ---------------------------\n");
 
         results := []Math_Tester_Result.{ cast(s64, result_offset), results_storage.data };
-        for test_result: results {
+        for *test_result: results {
             using test_result;
+            average_diff = ifx diff_count > 0 then total_diff / cast(float64, diff_count) else 0;
+
             push_context format_context {
-                print_to_builder(builder, "% (%) at % [%]\n", diff_at_max_error, average_diff(test_result), input_at_max_error, label);
+                print_to_builder(builder, "% (%) at % [%]\n", diff_at_max_error, average_diff, input_at_max_error, label);
             }
         }
 
         // sort results by ascending max error, use references to avoid copying entire structs when sorting
         result_references: [..] *Math_Tester_Result;
         for *result: results {
+            using result;
             array_add(*result_references, result);
         }
         compare :: (a: *Math_Tester_Result, b: *Math_Tester_Result) -> float64 {
-            return a.max_absolute_error - b.max_absolute_error;
+            cmp := a.max_absolute_error - b.max_absolute_error;
+            if !cmp {
+                cmp = abs(a.average_diff) - abs(b.average_diff);
+            }
+            return cmp;
         }
         quick_sort(result_references, compare);
 
         print_to_builder(builder, "\n");
         print_to_builder(builder, "sorted by max abs error (top ascending)\n");
         print_to_builder(builder, "------------------------------------------\n");
-        for result, i: result_references {
+
+        for i: 0..result_references.count-1 {
+            result := result_references[i];
             using result;
 
             push_context format_context {
-                print_to_builder(builder, "% (%) [%]\n", max_absolute_error, average_diff(result), label);
+                print_to_builder(builder, "% (%) [%", max_absolute_error, average_diff, label);
+
+                while i+1 < result_references.count {
+                    next_result := result_references[i+1];
+                    if !compare(next_result, result) {
+                        print_to_builder(builder, ", %", next_result.label);
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
+                print_to_builder(builder, "]\n");
             }
         }
 
-        if builder == *fallback_builder {
+        if builder == *fallback_builder
             write_builder(builder);
-        }
     }
 
     return running;
@@ -331,7 +371,7 @@ main :: () {
     tester: Math_Tester;
     tester.builder = *builder;
 
-    while math_test(*tester, -PI, PI) {
+    while math_test(*tester, 0, PI/2) {
         input := tester.input_value;
         actual := sin(input);
         result: float64;
@@ -343,6 +383,9 @@ main :: () {
 
             result = sint_horner(input, n);
             test_result(*tester, actual, result, "sin_taylor%_horner", n);
+
+            result = sint_backward(input, n);
+            test_result(*tester, actual, result, "sin_taylor%_backward", n);
 
             n += 1;
         }
