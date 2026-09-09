@@ -24,6 +24,15 @@ double sqrt_intrin_rcp_cpp(double x) {
    return output;
 }
 
+double fmad_intrin_cpp(double a, double b, double c) {
+   __m128d A = _mm_set_sd(a);
+   __m128d B = _mm_set_sd(b);
+   __m128d C = _mm_set_sd(c);
+   __m128d computed = _mm_fmadd_sd(A, B, C);
+   double output = _mm_cvtsd_f64(computed);
+   return output;
+}
+
 #define PI 3.14159265358979323846264338327950288419716939937510582097494459230781640628
 double sinq_zero_to_halfpi_cpp(double input) {
    __m128d A = _mm_set_sd(-0.3357488673628103541807525733876701910953780492546723687387637750157263772845455);

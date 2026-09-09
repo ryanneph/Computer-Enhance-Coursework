@@ -151,6 +151,23 @@ sint_horner :: (input: float64, $$order: u64 = 5) -> float64 {
     return result;
 }
 
+// horner's rule to evaluate polynomials more efficiently by factoring out the variable term
+sint_horner_fma :: (input: float64, $$order: u64 = 5) -> float64 {
+    result: float64 = 0;
+    squared := input * input;
+
+    i: u64 = 1;
+    while i <= order {
+        index := order - (i-1);
+        result = fmad_intrin(squared, result, sin_taylor_coeff(index));
+
+        i += 2;
+    }
+    result *= input;
+
+    return result;
+}
+
 // taylor-series approximation, computed backwards to mimic horner's version for reduced
 // error (at greater compute cost).
 sint_backward :: (input: float64, $$order: u64 = 5) -> float64 {
@@ -168,6 +185,28 @@ sint_backward :: (input: float64, $$order: u64 = 5) -> float64 {
             j += 2;
         }
         result += product * sin_taylor_coeff(xx power);
+
+        i += 2;
+    }
+
+    return result;
+}
+
+sint_backward_fma :: (input: float64, $$order: u64 = 5) -> float64 {
+    result: float64 = 0;
+    squared := input * input;
+
+    i: s64 = 1;
+    while i <= xx order {
+        power := xx order - i + 1;
+
+        product := input;
+        j := 3;
+        while j <= power {
+            product *= squared;
+            j += 2;
+        }
+        result = fmad_intrin(product, sin_taylor_coeff(xx power), result);
 
         i += 2;
     }
@@ -193,6 +232,7 @@ bind_to_cpp :: (name: string) -> string #compile_time {
 #insert #run bind_to_cpp("asin_intrin1");
 #insert #run bind_to_cpp("asin_intrin2");
 #insert #run bind_to_cpp("asin_intrin3");
+fmad_intrin :: (a: float64, b: float64, c: float64) -> float64 #foreign libintrinsicscpp "fmad_intrin_cpp";
 
 
 Math_Tester_Result :: struct {
@@ -386,6 +426,12 @@ main :: () {
 
             result = sint_backward(input, n);
             test_result(*tester, actual, result, "sin_taylor%_backward", n);
+
+            result = sint_horner_fma(input, n);
+            test_result(*tester, actual, result, "sin_taylor%_horner_fma", n);
+
+            result = sint_backward_fma(input, n);
+            test_result(*tester, actual, result, "sin_taylor%_backward_fma", n);
 
             n += 1;
         }

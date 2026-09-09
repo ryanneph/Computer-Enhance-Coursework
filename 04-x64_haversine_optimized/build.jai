@@ -19,7 +19,7 @@ compile_cpp_lib :: (source_name: string, library_type: Library_Type, output: str
     }
 
     args: [..]string;
-    array_add(*args, "clang++", ifx DEBUG then "-O0" else "-O2", "-g");
+    array_add(*args, "clang++", ifx DEBUG then "-O0" else "-O2", "-g", "-mfma");
 
     extension: string;
     if library_type == .SHARED {
