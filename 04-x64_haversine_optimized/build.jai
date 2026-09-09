@@ -10,9 +10,21 @@ Library_Type :: enum {
     STATIC;
 }
 
-compile_cpp_lib :: (source_name: string, library_type: Library_Type, output: string = "") -> bool {
-    result := true;
+compile_cpp_executable :: (source_name: string, output: string = "") -> bool {
+    output_name := output;
+    if ! output.count {
+        output_name = path_strip_extension(source_name);
+    }
 
+    args: [..]string;
+    array_add(*args, "clang++", "-g", "-o", output_name, source_name);
+
+    print("Building Cpp executable % from %\n", output_name, source_name);
+    result := run_command(..args, working_directory=#filepath);
+    return result.type == .EXITED && result.exit_code == 0;
+}
+
+compile_cpp_lib :: (source_name: string, library_type: Library_Type, output: string = "") -> bool {
     output_name := output;
     if ! output.count {
         output_name = path_strip_extension(source_name);
@@ -124,6 +136,12 @@ build :: () {
 
     exit_code: s32 = 1;
     prepare_error_count: u64;
+
+    if ! compile_cpp_executable("validate_math/convert_minimax.cpp") {
+        print("ERROR: failed building convert_minimax\n");
+        prepare_error_count += 1;
+    }
+
     if compile_cpp_lib("reference_haversine.cpp", .SHARED, output="libhaversinecpp") {
         if ! compile_module("main") {
             prepare_error_count += 1;

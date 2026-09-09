@@ -221,6 +221,23 @@ sint_backward_fma :: (input: float64, $$order: u64 = 5) -> float64 {
     return result;
 }
 
+sin_minimax_fma :: (input: float64, $$order: u64 = 5) -> float64 {
+    assert(xx order >= 2); // no solution for lower orders
+    assert(order < SineRadiansC_MFTWP.count);
+    coefficients := SineRadiansC_MFTWP[order];
+    squared := input * input;
+
+    index: u64 = order - 1;
+    result: float64 = coefficients[index];
+    while index > 0 {
+        index -= 1;
+        result = fmad_intrin(squared, result, coefficients[index]);
+    }
+    result *= input;
+
+    return result;
+}
+
 bind_to_cpp :: (name: string) -> string #compile_time {
     format := #string END
         %1 :: (input: float64) -> float64 {
@@ -282,7 +299,7 @@ set_label :: (using test_result: *Math_Tester_Result, format: string, args: ..An
 
 // run one iteration of the tester, storing the next vale to .input
 // and return true if more iterations remain
-math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 100_000_000) -> bool {
+math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 1_000_000) -> bool {
     if running {
         sample_index += 1;
     } else {
@@ -439,6 +456,11 @@ main :: () {
 
             result = sint_backward_fma(input, n);
             test_result(*tester, actual, result, "sin_taylor%_backward_fma", n);
+
+            if (n >= 2 && n < SineRadiansC_MFTWP.count) {
+                result = sin_minimax_fma(input, n);
+                test_result(*tester, actual, result, "sin_minimax%_fma", n);
+            }
 
             n += 1;
         }
