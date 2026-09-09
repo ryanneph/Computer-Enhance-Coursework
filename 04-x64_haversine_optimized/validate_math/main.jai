@@ -87,32 +87,39 @@ sinq :: (input: float64) -> float64 {
 
 // precompute taylor series coefficients at compile-time
 PRECOMP_MAX :: 40;
+sin_taylor_coeff_compute :: (power: u64) -> float64 {
+    result: float64 = 0;
+
+    factorial :: (x: u64) -> float64 {
+        result: float64 = cast(float64, x);
+        while x > 1 {
+            x -= 1;
+            result *= cast(float64, x);
+        }
+        return result;
+    }
+
+    sign: float64 = ifx (((power - 1)/2) % 2) then -1.0 else 1.0;
+    sign *= (power & 1); // even terms are zero for taylor series of sin(t) taken at x=0
+    result = sign / factorial(power);
+    return result;
+}
 sin_taylor_precomputed := #run -> [PRECOMP_MAX]float64 {
     out: [PRECOMP_MAX]float64;
-    out[0] = 0;
 
-    coefficient: float64 = 1.0;
-    for i: 1..out.count-1 {
-        coefficient /= i;
-
-        sign := ifx ((i+1) % 4) / 2 == 0 then -1.0 else 1.0;
-        out[i] = (i & 1) * sign * coefficient;
+    power: u64 = 1;
+    while power <= PRECOMP_MAX {
+        out[power] = sin_taylor_coeff_compute(power);
+        power += 2;
     }
 
     return out;
 }
-sin_taylor_coeff :: ($$index: u64) -> float64 {
-    if index < sin_taylor_precomputed.count {
-        return sin_taylor_precomputed[index];
+sin_taylor_coeff :: ($$power: u64) -> float64 {
+    if power < sin_taylor_precomputed.count {
+        return sin_taylor_precomputed[power];
     } else {
-        result := 1.0;
-        for i: 2..index {
-            result *= i;
-        }
-
-        sign := ifx ((index+1) % 4) / 2 == 0 then -1.0 else 1.0;
-        sign *= (index & 1); // even terms are zero for taylor series of sin(t) taken at x=0
-        result = sign / result;
+        result := sin_taylor_coeff_compute(power);
         return result;
     }
 }
