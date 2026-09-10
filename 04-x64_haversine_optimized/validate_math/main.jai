@@ -3,6 +3,8 @@
 #import "Sort";
 
 #load "golden_data.jai";
+#load "minimax_coefficients.jai";
+
 absolute_error_threshold: float64 : 1.0E-12;
 
 Test_Case :: struct {
@@ -476,7 +478,7 @@ main :: () {
             result = sint_backward_fma(input, n);
             test_result(*tester, actual, result, "sin_taylor%_backward_fma", n);
 
-            if (n >= 2 && n < SineRadiansC_MFTWP.count) {
+            if (n >= SineRadiansC_MFTWP_MIN_ORDER && n <= SineRadiansC_MFTWP_MAX_ORDER) {
                 result = sin_minimax_fma(input, n);
                 test_result(*tester, actual, result, "sin_minimax%_fma", n);
             }
@@ -501,7 +503,7 @@ main :: () {
         test_result(*tester, actual, asin_intrin2(tester.input_value), "asin_intrin2");
         test_result(*tester, actual, asin_intrin3(tester.input_value), "asin_intrin3");
 
-        for n: 2..cast(u64, ArcsineRadiansC_MFTWP.count-1) {
+        for n: ArcsineRadiansC_MFTWP_MIN_ORDER..ArcsineRadiansC_MFTWP_MAX_ORDER {
             test_result(*tester, actual, asin_minimax_fma(tester.input_value, n), "asin_minimax%_fma", n);
         }
     }
