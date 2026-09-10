@@ -223,30 +223,12 @@ sint_backward_fma :: (input: float64, $$order: u64 = 5) -> float64 {
     return result;
 }
 
-sin_minimax_fma :: (input: float64, $$order: u64 = 5) -> float64 {
-    assert(xx order >= 2); // no solution for lower orders
-    assert(order < SineRadiansC_MFTWP.count);
-    coefficients := SineRadiansC_MFTWP[order];
+polynomial_oddpower_approx_fma :: (input: float64, coefficients: []float64, count: u64) -> float64 {
+    assert(count > 0);
+    assert(xx count <= coefficients.count);
     squared := input * input;
 
-    index: u64 = order - 1;
-    result: float64 = coefficients[index];
-    while index > 0 {
-        index -= 1;
-        result = fmad_intrin(squared, result, coefficients[index]);
-    }
-    result *= input;
-
-    return result;
-}
-
-asin_minimax_fma :: (input: float64, $$order: u64 = 5) -> float64 {
-    assert(xx order >= 2); // no solution for lower orders
-    assert(order < ArcsineRadiansC_MFTWP.count);
-    coefficients := ArcsineRadiansC_MFTWP[order];
-    squared := input * input;
-
-    index: u64 = order - 1;
+    index: u64 = count - 1;
     result: float64 = coefficients[index];
     while index > 0 {
         index -= 1;
@@ -438,8 +420,6 @@ test_result :: (using tester: *Math_Tester, actual: float64, result: float64, la
 }
 
 main :: () {
-
-
     builder: String_Builder;
 
     //
@@ -461,8 +441,7 @@ main :: () {
         actual := sin(input);
         result: float64;
 
-        taylor_highest_term :: 31;
-        for n: 1..cast(u64, taylor_highest_term) {
+        n: u64 = 1; while n <= 31 { defer n += 2;
             result = sint(input, n);
             test_result(*tester, actual, result, "sin_taylor%", n);
 
@@ -477,13 +456,16 @@ main :: () {
 
             result = sint_backward_fma(input, n);
             test_result(*tester, actual, result, "sin_taylor%_backward_fma", n);
+        }
 
-            if (n >= SineRadiansC_MFTWP_MIN_ORDER && n <= SineRadiansC_MFTWP_MAX_ORDER) {
-                result = sin_minimax_fma(input, n);
-                test_result(*tester, actual, result, "sin_minimax%_fma", n);
-            }
+        for n: 1..cast(u64, SineRadiansC_Taylor.count) {
+            result = polynomial_oddpower_approx_fma(input, SineRadiansC_Taylor, n);
+            test_result(*tester, actual, result, "sin_taylor[%]", n);
+        }
 
-            n += 1;
+        for n: SineRadiansC_MFTWP_MIN_ORDER..SineRadiansC_MFTWP_MAX_ORDER {
+            result = polynomial_oddpower_approx_fma(input, SineRadiansC_MFTWP[n], n);
+            test_result(*tester, actual, result, "sin_minimax[%]", n);
         }
 
         result = sinq(input);
@@ -503,8 +485,14 @@ main :: () {
         test_result(*tester, actual, asin_intrin2(tester.input_value), "asin_intrin2");
         test_result(*tester, actual, asin_intrin3(tester.input_value), "asin_intrin3");
 
+        for n: 1..cast(u64, ArcsineRadiansC_Taylor.count) {
+            result := polynomial_oddpower_approx_fma(tester.input_value, ArcsineRadiansC_Taylor, n);
+            test_result(*tester, actual, result, "asin_taylor[%]", n);
+        }
+
         for n: ArcsineRadiansC_MFTWP_MIN_ORDER..ArcsineRadiansC_MFTWP_MAX_ORDER {
-            test_result(*tester, actual, asin_minimax_fma(tester.input_value, n), "asin_minimax%_fma", n);
+            result := polynomial_oddpower_approx_fma(tester.input_value, ArcsineRadiansC_MFTWP[n], n);
+            test_result(*tester, actual, result, "asin_minimax[%]", n);
         }
     }
 
