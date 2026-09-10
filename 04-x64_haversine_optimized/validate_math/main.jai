@@ -239,6 +239,22 @@ polynomial_oddpower_approx_fma :: (input: float64, coefficients: []float64, coun
     return result;
 }
 
+RCP_SQRT2 :: 0.7071067811865475;
+asin_minimax_rr :: (input: float64, order: u64) -> float64 {
+    // remaps domain:[1/sqrt(2), 1] back into supported domain:[0, 1/sqrt(2)]
+    // then computes using minimax approximation
+
+    result: float64;
+    if input >= RCP_SQRT2 {
+        remapped := sqrt_intrin(1 - input * input);
+        result = polynomial_oddpower_approx_fma(remapped, ArcsineRadiansC_MFTWP[order], order);
+        result = PI/2.0 - result;
+    } else {
+        result = polynomial_oddpower_approx_fma(input, ArcsineRadiansC_MFTWP[order], order);
+    }
+    return result;
+}
+
 bind_to_cpp :: (name: string) -> string #compile_time {
     format := #string END
         %1 :: (input: float64) -> float64 {
@@ -300,7 +316,9 @@ set_label :: (using test_result: *Math_Tester_Result, format: string, args: ..An
 
 // run one iteration of the tester, storing the next vale to .input
 // and return true if more iterations remain
-math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 100_000_000) -> bool {
+math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 100_000_000,
+              name: string = "") -> bool
+{
     if running {
         sample_index += 1;
     } else {
@@ -329,7 +347,7 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
         format_float.trailing_width = 24;
         format_float.mode = .DECIMAL;
 
-        print_to_builder(builder, "\n");
+        print_to_builder(builder, "\nTESTER: % on domain:[%, %]\n", name, sample_first, sample_last);
         print_to_builder(builder, "max abs error               (avg error                  )    input value\n");
         print_to_builder(builder, "--------------------------- ----------------------------- -- ---------------------------\n");
 
@@ -359,8 +377,8 @@ math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: fl
         quick_sort(result_references, compare);
 
         print_to_builder(builder, "\n");
-        print_to_builder(builder, "sorted by max abs error (top ascending)\n");
-        print_to_builder(builder, "------------------------------------------\n");
+        print_to_builder(builder, "sorted by max abs error (ascending)\n");
+        print_to_builder(builder, "-----------------------------------\n");
 
         for i: 0..result_references.count-1 {
             result := result_references[i];
@@ -436,7 +454,18 @@ main :: () {
     tester: Math_Tester;
     tester.builder = *builder;
 
-    while math_test(*tester, 0, PI/2) {
+    while math_test(*tester, 0.0, 1.0, name="sqrt") {
+        actual := sqrt(tester.input_value);
+        test_result(*tester, actual, sqrt_intrin(tester.input_value), "sqrt_intrin");
+        test_result(*tester, actual, sqrt_intrin_f32(tester.input_value), "sqrt_intrin_f32");
+        test_result(*tester, actual, sqrt_intrin_rcp(tester.input_value), "sqrt_intrin_rcp");
+    }
+
+    while math_test(*tester, -PI/2, PI/2, name="cos") {
+        test_result(*tester, cos(tester.input_value), cosq_intrin(tester.input_value), "cosq_quartdomain_intrin");
+    }
+
+    while math_test(*tester, 0, PI/2, name="sin") {
         input := tester.input_value;
         actual := sin(input);
         result: float64;
@@ -475,11 +504,7 @@ main :: () {
         test_result(*tester, actual, result, "sinq_quartdomain_intrin");
     }
 
-    while math_test(*tester, -PI/2, PI/2) {
-        test_result(*tester, cos(tester.input_value), cosq_intrin(tester.input_value), "cosq_quartdomain_intrin");
-    }
-
-    while math_test(*tester, 0.0, 1.0 / sqrt(2)) {
+    while math_test(*tester, 0.0, 1.0 / sqrt(2), name="asin (reduced-domain)") {
         actual := asin(tester.input_value);
         test_result(*tester, actual, asin_intrin1(tester.input_value), "asin_intrin1");
         test_result(*tester, actual, asin_intrin2(tester.input_value), "asin_intrin2");
@@ -496,11 +521,24 @@ main :: () {
         }
     }
 
-    while math_test(*tester, 0.0, 1.0) {
-        actual := sqrt(tester.input_value);
-        test_result(*tester, actual, sqrt_intrin(tester.input_value), "sqrt_intrin");
-        test_result(*tester, actual, sqrt_intrin_f32(tester.input_value), "sqrt_intrin_f32");
-        test_result(*tester, actual, sqrt_intrin_rcp(tester.input_value), "sqrt_intrin_rcp");
+    while math_test(*tester, 0.0, 1.0, name="asin (full-domain)") {
+        actual := asin(tester.input_value);
+        test_result(*tester, actual, asin_intrin1(tester.input_value), "asin_intrin1");
+        test_result(*tester, actual, asin_intrin2(tester.input_value), "asin_intrin2");
+        test_result(*tester, actual, asin_intrin3(tester.input_value), "asin_intrin3");
+
+        for n: 1..cast(u64, ArcsineRadiansC_Taylor.count) {
+            result := polynomial_oddpower_approx_fma(tester.input_value, ArcsineRadiansC_Taylor, n);
+            test_result(*tester, actual, result, "asin_taylor[%]", n);
+        }
+
+        for n: ArcsineRadiansC_MFTWP_MIN_ORDER..ArcsineRadiansC_MFTWP_MAX_ORDER {
+            result := polynomial_oddpower_approx_fma(tester.input_value, ArcsineRadiansC_MFTWP[n], n);
+            test_result(*tester, actual, result, "asin_minimax[%]", n);
+
+            result = asin_minimax_rr(tester.input_value, n);
+            test_result(*tester, actual, result, "asin_minimax_remap[%]", n);
+        }
     }
 
     write_builder(*builder);
