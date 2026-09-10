@@ -238,6 +238,23 @@ sin_minimax_fma :: (input: float64, $$order: u64 = 5) -> float64 {
     return result;
 }
 
+asin_minimax_fma :: (input: float64, $$order: u64 = 5) -> float64 {
+    assert(xx order >= 2); // no solution for lower orders
+    assert(order < ArcsineRadiansC_MFTWP.count);
+    coefficients := ArcsineRadiansC_MFTWP[order];
+    squared := input * input;
+
+    index: u64 = order - 1;
+    result: float64 = coefficients[index];
+    while index > 0 {
+        index -= 1;
+        result = fmad_intrin(squared, result, coefficients[index]);
+    }
+    result *= input;
+
+    return result;
+}
+
 bind_to_cpp :: (name: string) -> string #compile_time {
     format := #string END
         %1 :: (input: float64) -> float64 {
@@ -299,7 +316,7 @@ set_label :: (using test_result: *Math_Tester_Result, format: string, args: ..An
 
 // run one iteration of the tester, storing the next vale to .input
 // and return true if more iterations remain
-math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 1_000_000) -> bool {
+math_test :: (using tester: *Math_Tester, sample_first: float64, sample_last: float64, sample_count: u64 = 100_000_000) -> bool {
     if running {
         sample_index += 1;
     } else {
@@ -419,10 +436,12 @@ test_result :: (using tester: *Math_Tester, actual: float64, result: float64, la
 }
 
 main :: () {
+
+
     builder: String_Builder;
 
     //
-    // Golden Tests
+    // Golden Tests: validate standard library against golden data
     //
     golden_results := Golden_Test_Result.[
         .{"sin",  run_golden_test(sin,  sin_golden_tests)},
@@ -476,11 +495,15 @@ main :: () {
         test_result(*tester, cos(tester.input_value), cosq_intrin(tester.input_value), "cosq_quartdomain_intrin");
     }
 
-    while math_test(*tester, 0.0, 1.0) {
+    while math_test(*tester, 0.0, 1.0 / sqrt(2)) {
         actual := asin(tester.input_value);
         test_result(*tester, actual, asin_intrin1(tester.input_value), "asin_intrin1");
         test_result(*tester, actual, asin_intrin2(tester.input_value), "asin_intrin2");
         test_result(*tester, actual, asin_intrin3(tester.input_value), "asin_intrin3");
+
+        for n: 2..cast(u64, ArcsineRadiansC_MFTWP.count-1) {
+            test_result(*tester, actual, asin_minimax_fma(tester.input_value, n), "asin_minimax%_fma", n);
+        }
     }
 
     while math_test(*tester, 0.0, 1.0) {
